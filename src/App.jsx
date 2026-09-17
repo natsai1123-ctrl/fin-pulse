@@ -14,7 +14,7 @@ export default function App() {
   // 表單狀態
   const [bank, setBank] = useState('花旗銀行');
   const [name, setName] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => new Date().toISOString().split('T'));
   const [amount, setAmount] = useState('');
 
   // AI 狀態

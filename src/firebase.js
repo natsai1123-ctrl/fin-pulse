@@ -1,10 +1,10 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore"; // 引入 Firestore 資料庫功能
+import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
-// ⚠️ 已根據你最新的截圖完全修正數值
 const firebaseConfig = {
   apiKey: "AIzaSyDrGC_b-M7-VeqDhzsBY7JvP8mznMxBIII",
-  authDomain: "fin-pulse-adf61.firebaseapp.com",
+  authDomain: "://firebaseapp.com",
   projectId: "fin-pulse-adf61",
   storageBucket: "fin-pulse-adf61.firebasestorage.app",
   messagingSenderId: "960592027576",
@@ -12,10 +12,8 @@ const firebaseConfig = {
   measurementId: "G-7T2VZHHMGF"
 };
 
-// 初始化 Firebase
 const app = initializeApp(firebaseConfig);
-
-// 匯出資料庫，讓其他記帳或財務組件可以使用
 export const db = getFirestore(app);
+export const auth = getAuth(app);
 
 export default app;
