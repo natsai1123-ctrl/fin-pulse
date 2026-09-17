@@ -3,6 +3,8 @@ import { db, auth } from './firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
+const BANK_OPTIONS = ['花旗銀行', '渣打銀行', '恆生銀行', '滙豐銀行', '中國銀行', '其他銀行'];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [cards, setCards] = useState([]);
@@ -21,11 +23,7 @@ export default function App() {
     { role: 'ai', text: '你好！我是 FinPulse 本地理財顧問。我已成功接通您的雲端帳單，您可以問我「財務狀況」或「還款策略」！' }
   ]);
 
-  const showToast = (msg) => {
-    console.log(msg);
-  };
-
-  // 🔐 實時雲端連通核心 (原生保障通道)
+  // 🔐 實時雲端連通核心
   useEffect(() => {
     let unsubscribeCards = () => {};
 
@@ -90,8 +88,8 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
-  // 本地 AI 智能大腦
-  const handleSendAiMessage = () => {
+  // 智慧對話函式
+  const handleSendMessage = () => {
     var query = chatInput.trim();
     if (!query) return;
 
@@ -115,9 +113,9 @@ export default function App() {
       }
 
       if (query.includes("狀況") || query.includes("財務") || query.includes("多少")) {
-        reply = "📊 【雲端實時診斷】您目前在雲端共有 " + cards.length + " 筆帳單，待繳總金額為 <strong>HK$" + total.toLocaleString() + "</strong>。";
+        reply = "📊 【雲端實時診斷】您目前在雲端共有 " + cards.length + " 筆帳單，待繳總金額為 <strong>HK\$" + total.toLocaleString() + "</strong>。";
       } else if (query.includes("最多") || query.includes("大額") || query.includes("最高")) {
-        reply = "🔥 【高風險提示】目前欠款金額最高的卡片是 <strong>「" + maxCardName + "」</strong>，金額為 <strong>HK$" + maxAmount.toLocaleString() + "</strong>。";
+        reply = "🔥 【高風險提示】目前欠款金額最高的卡片是 <strong>「" + maxCardName + "」</strong>，金額為 <strong>HK\$" + maxAmount.toLocaleString() + "</strong>。";
       } else if (query.includes("還款") || query.includes("建議")) {
         reply = "💡 【還款建議】建議全額集中資金，優先進攻目前欠款最多的 「" + maxCardName + "」，能最有效率地避免高昂利息！";
       }
@@ -131,63 +129,63 @@ export default function App() {
   }, [cards]);
 
   return (
-    <div style={{ maxWidth: '750px', margin: '20px auto', backgroundColor: '#1e293b', padding: '30px', borderRadius: '20px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', fontFamily: 'sans-serif', color: '#f1f5f9' }}>
-      <div style={{ fontSize: '26px', fontWeight: 'bold', color: '#38bdf8', textAlign: 'center', marginBottom: '20px' }}>🚀 FIN-PULSE 智慧雲端控制台</div>
+    <div className="max-w-3xl mx-auto my-8 bg-slate-800 p-8 rounded-3xl shadow-2xl text-slate-100">
+      <div className="text-2xl font-black text-cyan-400 text-center mb-6 tracking-wide">🚀 FIN-PULSE 智慧雲端控制台</div>
       
       {/* 📊 指標區 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '25px', background: '#0f172a', padding: '15px', borderRadius: '12px', border: '1px solid #334155' }}>
+      <div className="grid grid-cols-2 gap-4 mb-6 bg-slate-900 p-4 rounded-2xl border border-slate-700">
         <div>
-          <div style={{ fontSize: '12px', color: '#94a3b8' }}>💳 雲端待還總額</div>
-          <div style={{ fontSize: '22px', fontWeight: 'bold', color: '#38bdf8', marginTop: '5px' }}>HK${totalUnpaid.toLocaleString()}</div>
+          <div className="text-xs text-slate-400">💳 雲端待還總額</div>
+          <div className="text-xl font-bold text-cyan-400 mt-1">HK\${totalUnpaid.toLocaleString()}</div>
         </div>
         <div>
-          <div style={{ fontSize: '12px', color: '#94a3b8' }}>📡 連線狀態</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: loading ? '#f59e0b' : '#10b981', marginTop: '9px' }}>
+          <div className="text-xs text-slate-400">📡 連線狀態</div>
+          <div className={`text-sm font-bold mt-1.5 ${loading ? 'text-amber-400' : 'text-emerald-400'}`}>
             {loading ? '⏳ 正在連線...' : '🟢 Firebase 已同步'}
           </div>
         </div>
       </div>
 
       {/* 導覽籤頁 */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button type="button" onClick={() => setActiveTab('overview')} style={{ flex: 1, padding: '10px', background: activeTab === 'overview' ? '#0ea5e9' : '#334155', color: activeTab === 'overview' ? '#0f172a' : 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>帳單管理</button>
-        <button type="button" onClick={() => setActiveTab('ai')} style={{ flex: 1, padding: '10px', background: activeTab === 'ai' ? '#c084fc' : '#334155', color: activeTab === 'ai' ? '#0f172a' : 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>🤖 AI 顧問</button>
+      <div className="flex gap-3 mb-6">
+        <button type="button" onClick={() => setActiveTab('overview')} className={`flex-1 p-2.5 rounded-xl font-bold transition-all ${activeTab === 'overview' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-700 text-white'}`}>帳單管理</button>
+        <button type="button" onClick={() => setActiveTab('ai')} className={`flex-1 p-2.5 rounded-xl font-bold transition-all ${activeTab === 'ai' ? 'bg-purple-500 text-white' : 'bg-slate-700 text-white'}`}>🤖 AI 顧問</button>
       </div>
 
       {activeTab === 'overview' ? (
-        <div>
+        <div className="space-y-6">
           {/* ➕ 手動新增表單 */}
-          <form onSubmit={handleAddCard} style={{ background: '#0f172a', border: '1px solid #334155', padding: '20px', borderRadius: '15px', marginBottom: '25px' }}>
-            <strong style={{ color: '#38bdf8', fontSize: '14px' }}>➕ 新增雲端信用卡項目</strong>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '10px', marginTop: '10px' }}>
-              <select value={bank} onChange={e => setBank(e.target.value)} style={{ padding: '8px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: 'white' }}>
+          <form onSubmit={handleAddCard} className="bg-slate-900 border border-slate-700 p-5 rounded-2xl">
+            <strong className="text-cyan-400 text-sm block mb-3">➕ 新增雲端信用卡項目</strong>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <select value={bank} onChange={e => setBank(e.target.value)} className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-xs">
                 {BANK_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
               </select>
-              <input type="text" placeholder="卡片名稱" value={name} onChange={e => setName(e.target.value)} style={{ padding: '8px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: 'white' }} />
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={{ padding: '8px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: 'white' }} />
-              <input type="number" placeholder="金額" value={amount} onChange={e => setAmount(e.target.value)} style={{ padding: '8px', background: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: 'white' }} />
+              <input type="text" placeholder="卡片名稱" value={name} onChange={e => setName(e.target.value)} className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-xs" />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-xs" />
+              <input type="number" placeholder="金額" value={amount} onChange={e => setAmount(e.target.value)} className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-xs" />
             </div>
-            <div style={{ textAlign: 'right', marginTop: '12px' }}>
-              <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>確認上傳雲端</button>
+            <div className="text-right mt-4">
+              <button type="submit" className="bg-emerald-500 text-white font-bold py-2 px-6 rounded-lg text-xs hover:bg-emerald-600 transition-colors">確認上傳雲端</button>
             </div>
           </form>
 
           {/* 清單展示區 */}
-          <div style={{ textAlign: 'left' }}>
-            <h3 style={{ color: '#38bdf8', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '15px' }}>📋 雲端即時清單 ({cards.length} 張卡)：</h3>
-            <div>
+          <div className="text-left">
+            <h3 className="text-cyan-400 border-b border-slate-700 pb-2 text-sm font-bold">📋 雲端即時清單 ({cards.length} 張卡)：</h3>
+            <div className="mt-3 space-y-3">
               {cards.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>雲端目前沒有帳單，請在上方新增！</div>
+                <div className="text-center py-6 text-slate-500 text-xs">雲端目前沒有帳單，請在上方新增！</div>
               ) : (
                 cards.map(c => (
-                  <div key={c.id} style={{ background: '#0f172a', border: '1px solid #475569', padding: '15px', margin: '12px 0', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={c.id} className="bg-slate-900 border border-slate-700 p-4 rounded-xl flex justify-between items-center shadow-md">
                     <div>
-                      <strong style={{ color: '#38bdf8' }}>[{c.bank}]</strong> {c.name}
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>📅 到期日: {c.date}</div>
+                      <strong className="text-cyan-400 text-sm">[{c.bank}]</strong> <span className="text-sm">{c.name}</span>
+                      <div className="text-xs text-slate-500 mt-1">📅 到期日: {c.date}</div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontWeight: 'bold', color: '#f59e0b', fontSize: '16px' }}>HK${Number(c.amount || 0).toLocaleString()}</span>
-                      <button type="button" onClick={() => handleDeleteCard(c.id)} style={{ backgroundColor: 'rgba(239,68,68,0.2)', color: '#f87171', border: '1px solid rgba(239,68,68,0.4)', padding: '3px 8px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>刪除</button>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-amber-400 text-base">HK\${Number(c.amount || 0).toLocaleString()}</span>
+                      <button type="button" onClick={() => handleDeleteCard(c.id)} className="bg-rose-500/20 text-rose-300 border border-rose-500/40 py-1 px-3 rounded-md text-xs hover:bg-rose-600 hover:text-white transition-colors">刪除</button>
                     </div>
                   </div>
                 ))
@@ -197,6 +195,20 @@ export default function App() {
         </div>
       ) : (
         /* 💬 AI 顧問分頁 */
-        <div style={{ background: '#0f172a', border: '1px solid #334155', padding: '15px', borderRadius: '15px', textAlign: 'left' }}>
-          <div style={{ height: '160px', overflowY: 'auto', background: '#020617', borderRadius: '10px', padding: '12px', marginBottom: '10px', border: '1px solid #1e293b' }}>
+        <div className="bg-slate-900 border border-slate-700 p-4 rounded-2xl text-left">
+          <div className="h-40 overflow-y-auto bg-slate-950 rounded-xl p-3 mb-3 border border-slate-800">
             {chatMessages.map((msg, i) => (
+              <div key={i} className={`mb-3 text-xs flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`p-2.5 rounded-xl max-w-[85%] ${msg.role === 'user' ? 'bg-cyan-500 text-slate-950 font-bold' : 'bg-slate-800 text-slate-100'}`} dangerouslySetInnerHTML={{__html: msg.text}}></div>
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input type="text" placeholder="向 AI 顧問提問..." value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendMessage()} className="p-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-xs flex-1" />
+            <button type="button" onClick={handleSendMessage} className="bg-purple-500 text-white font-bold py-2 px-4 rounded-lg text-xs hover:bg-purple-600 transition-all">發送</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
