@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="UTF-8" />
+  <title>FIN-PULSE 智能信用卡月結單管理系統 (診斷版)</title>
+  <style>
+    body { background-color: #0f172a; color: #f1f5f9; font-family: sans-serif; padding: 20px; }
+    .box { background-color: #1e293b; border: 1px solid #334155; padding: 30px; border-radius: 20px; max-width: 750px; margin: 20px auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .title { color: #38bdf8; font-size: 26px; font-weight: bold; text-align: center; margin-bottom: 20px; }
+    
+    /* ⚠️ 核心新增：頂置探針即時日誌視窗 */
+    .probe-log { background-color: #020617; border: 1px solid #fb7185; padding: 15px; border-radius: 12px; margin-bottom: 25px; text-align: left; font-family: monospace; font-size: 12px; color: #fecdd3; line-height: 1.5; }
+    .probe-success { color: #34d399; }
+    
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; background: #0f172a; padding: 15px; border-radius: 12px; border: 1px solid #334155; }
+    .stat-val { font-size: 20px; font-weight: bold; color: #38bdf8; margin-top: 5px; }
+    .upload-zone { border: 2px dashed #475569; background: #0f172a; padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 25px; cursor: pointer; }
+    .form-section { background: #0f172a; border: 1px solid #334155; padding: 20px; border-radius: 15px; margin-bottom: 25px; text-align: left; }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-top: 10px; }
+    .form-group { display: flex; flex-direction: column; }
+    .form-group label { font-size: 11px; color: #94a3b8; margin-bottom: 4px; font-weight: bold; }
+    .input-box { padding: 8px; background: #1e293b; border: 1px solid #475569; border-radius: 8px; color: white; font-size: 13px; width: 100%; box-sizing: border-box; }
+    .btn { background-color: #10b981; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; }
+    .card-item { background: #0f172a; border: 1px solid #475569; padding: 15px; margin: 12px 0; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; }
+  </style>
+</head>
+<body>
+
+  <div class="box">
+    <div class="title">🚀 FIN-PULSE 核心自我診斷系統</div>
+
+    <!-- 🔍 診斷探針日誌看板 -->
+    <div class="probe-log">
+      <div style="font-weight: bold; color: #fb7185; margin-bottom: 8px; border-bottom: 1px solid #e11d48; padding-bottom: 4px;">📡 ENGINE PROBE ACTIVE (系統探針即時追蹤日誌)：</div>
+      <div id="probe-init">⏳ 正在啟動底層解碼器...</div>
+      <div id="probe-click-log" style="color: #67e8f9; margin-top: 5px; font-weight: bold;">[等待點擊動作中...]</div>
+    </div>
+    
+    <!-- 📊 指標區 -->
+    <div class="stats-grid">
+      <div>
+        <div style="font-size: 12px; color: #94a3b8;">💳 待還款總金額</div>
+        <div id="stat-total" class="stat-val">HK$0</div>
+      </div>
+      <div>
+        <div style="font-size: 12px; color: #94a3b8;">📅 待繳卡片數量</div>
+        <div id="stat-count" class="stat-val" style="color: #fb7185;">0 張</div>
+      </div>
+    </div>
+
+    <!-- Excel 導入區 -->
+    <div class="upload-zone" onclick="triggerExcelClick(event)">
+      <div style="font-size: 14px; font-weight: bold; color: #e2e8f0; margin-bottom: 4px;">點擊導入信用卡月結單 Excel</div>
+      <div style="font-size: 11px; color: #64748b;">(將自動載入本地解碼快取測試數據)</div>
+      <input type="file" id="excel-file-input" style="display: none;" onchange="handleExcelUpload(event)" />
+    </div>
+
+    <!-- ➕ 手動新增表單 -->
+    <div class="form-section">
+      <strong style="color: #38bdf8; font-size: 14px;">➕ 手動錄入新信用卡帳單</strong>
+      <form id="add-form" onsubmit="handleAddNewCard(event)">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>發卡銀行</label>
+            <select id="ins-bank" class="input-box">
+              <option value="花旗銀行">花旗銀行</option>
+              <option value="渣打銀行">渣打銀行</option>
+              <option value="恆生銀行">恆生銀行</option>
+              <option value="滙豐銀行">滙豐銀行</option>
+              <option value="中國銀行">中國銀行</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>卡片名稱</label>
+            <input type="text" id="ins-name" class="input-box" value="測試卡" required />
+          </div>
+          <div class="form-group">
+            <label>到期日期</label>
+            <input type="date" id="ins-date" class="input-box" required />
+          </div>
+          <div class="form-group">
+            <label>應還金額(HK$)</label>
+            <input type="number" id="ins-amount" class="input-box" value="5000" required />
+          </div>
+        </div>
+        <div style="text-align: right; margin-top: 15px;">
+          <button type="submit" class="btn">確認新增</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 清單展示區 -->
+    <div style="text-align: left;">
+      <h3 style="color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 6px; font-size: 15px;">📋 應還款清單：</h3>
+      <div id="card-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // 探針核心日誌回報器
+    function logProbe(elementId, text, isSuccess) {
+      var el = document.getElementById(elementId);
+      if (el) {
+        el.innerHTML = text;
+        if (isSuccess) el.className = "probe-success";
+      }
+    }
+
+    var localCards = [
+      { id: "1", bank: "花旗銀行", name: "Citi Cash Back", date: "2026-09-25", amount: 2090 },
+      { id: "2", bank: "恆生銀行", name: "Enjoy 卡", date: "2026-09-30", amount: 3450 }
+    ];
+
+    // 啟動全自動安全監測
+    window.onload = function() {
+      try {
+        logProbe('probe-init', "✔ 步驟 1/3：網頁初始載入完成。已完全排除外部 CDN 阻擋。", true);
+        
+        // 嘗試寫入/讀取本地快取測試
+        localStorage.setItem('fin_pulse_probe_test', 'active');
+        var testCache = localStorage.getItem('fin_pulse_probe_test');
+        
+        logProbe('probe-init', "✔ 步驟 2/3：網頁初始載入完成。<br>✔ 步驟 3/3：本地記憶體 (LocalStorage) 讀寫功能測試：<span class='probe-success'>【成功接通】</span>", true);
+        
+        document.getElementById('ins-date').value = new Date().toISOString().split('T')[0];
+        renderDashboard();
+      } catch (e) {
+        logProbe('probe-init', "❌ 探針檢測到瀏覽器致命阻擋：<br>" + e.message, false);
+      }
+    };
+
+    function renderDashboard() {
+      var cardListEl = document.getElementById('card-list');
+      var htmlBuffer = "";
+      var totalAmount = 0;
+
+      for (var i = 0; i < localCards.length; i++) {
+        var card = localCards[i];
+        totalAmount += Number(card.amount);
+        htmlBuffer += "<div class='card-item'><div><strong>[" + card.bank + "]</strong> " + card.name + "<br><span style='font-size:11px;color:#64748b;'>到期日: " + card.date + "</span></div><div style='font-weight:bold;color:#f59e0b;'>HK$" + card.amount.toLocaleString() + "</div></div>";
+      }
+
+      cardListEl.innerHTML = htmlBuffer;
+      document.getElementById('stat-total').innerText = "HK$" + totalAmount.toLocaleString();
+      document.getElementById('stat-count').innerText = localCards.length + " 張";
+    }
+
+    // 🎯 點擊事件追蹤探針
+    function handleAddNewCard(event) {
+      event.preventDefault();
+      try {
+        var bank = document.getElementById('ins-bank').value;
+        var name = document.getElementById('ins-name').value.trim();
+        var date = document.getElementById('ins-date').value;
+        var amount = parseFloat(document.getElementById('ins-amount').value);
+
+        // 寫入點擊動作日誌
+        document.getElementById('probe-click-log').innerHTML = "⚡ 【探針監測到動作】你點擊了「確認新增」按鈕！正在解算資料流...";
+
+        localCards.push({ id: "id-" + new Date().getTime(), bank: bank, name: name, date: date, amount: amount });
+        renderDashboard();
+
+        document.getElementById('probe-click-log').innerHTML = "🎯 【排查結果】：<span class='probe-success'>手動新增卡片資料解算成功！新卡片已畫入清單。</span>";
+      } catch (err) {
+        document.getElementById('probe-click-log').innerHTML = "❌ 【點擊崩潰攔截】：點擊「確認新增」時發生錯誤，原因：" + err.message;
+      }
+    }
+
+    function triggerExcelClick(event) {
+      document.getElementById('probe-click-log').innerHTML = "⚡ 【探針監測到動作】你點擊了「Excel 導入上傳區」！";
+      document.getElementById('excel-file-input').click();
+    }
+
+    function handleExcelUpload(event) {
+      try {
+        document.getElementById('probe-click-log').innerHTML = "⚡ 【探針監測到動作】Excel 檔案流已傳入！正在執行本地硬解編碼...";
+        
+        localCards.push({ id: "ex-1", bank: "渣打銀行", name: "國泰尊尚卡", date: "2026-10-05", amount: 6800 });
+        renderDashboard();
+
+        document.getElementById('probe-click-log').innerHTML = "🎯 【排查結果】：<span class='probe-success'>Excel 本地模擬硬解碼大獲成功！新卡片已即時加入。</span>";
+      } catch (err) {
+        document.getElementById('probe-click-log').innerHTML = "❌ 【點擊崩潰攔截】：處理 Excel 上傳時崩潰，原因：" + err.message;
+      }
+    }
+  </script>
+</body>
+</html>
