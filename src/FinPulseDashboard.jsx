@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Icon from './Icon';
+import AnalyticsChart from './AnalyticsChart';
 import { initCloudSync, addCloudTx, deleteCloudTx } from './db';
 import { importExcelToCloud } from './excelService';
 
@@ -54,7 +55,7 @@ export default function App() {
         <span style={{ fontSize: '20px', fontWeight: '900' }}>FinPulse PRO</span>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span style={{ fontSize: '12px', color: loading ? '#fbbf24' : '#34d399' }}>{loading ? '⏳ 同步中...' : '🟢 雲端同步'}</span>
-          <button onClick={() => setShowModal(true)} style={{ backgroundColor: '#10b981', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Add</button>
+          <button onClick={() => setShow(true)} style={{ backgroundColor: '#10b981', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Add</button>
           <button onClick={() => setDark(!dark)} style={{ padding: '8px', borderRadius: '8px', border: border, backgroundColor: card, color: txt, cursor: 'pointer' }}><Icon name={dark ? 'sun' : 'moon'} /></button>
         </div>
       </header>
@@ -65,7 +66,9 @@ export default function App() {
           <div style={{ fontSize: '28px', fontWeight: '700' }}>{"HK$ " + sum.toLocaleString()}</div>
         </div>
 
-        {/* 📥 修正版：讓原生選擇檔案按鈕百分之百露出來 */}
+        {/* 📊 動態 Recharts 數據分析圖表區 */}
+        <AnalyticsChart txs={txs} dark={dark} />
+
         <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: '2px dashed #a855f7', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
             <strong style={{ color: '#a855f7', fontSize: '14px', display: 'block' }}>智能 Excel 帳單匯入</strong>
