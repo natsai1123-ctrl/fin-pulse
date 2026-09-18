@@ -14,7 +14,7 @@ export default function App() {
   // 表單狀態
   const [bank, setBank] = useState('花旗銀行');
   const [name, setName] = useState('');
-  const [date, setDate] = useState(() => new Date().toISOString().split('T'));
+  const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]); // 修正：確保取得 YYYY-MM-DD 字串
   const [amount, setAmount] = useState('');
 
   // AI 狀態
@@ -149,7 +149,7 @@ export default function App() {
       {/* 導覽籤頁 */}
       <div style={{ display: 'flex', gap: '12px', marginBottom: '25px' }}>
         <button type="button" onClick={() => setActiveTab('overview')} style={{ flex: 1, padding: '12px', background: activeTab === 'overview' ? '#0ea5e9' : '#334155', color: activeTab === 'overview' ? '#0f172a' : 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', transition: 'all 0.2s' }}>帳單管理中心</button>
-        <button type="button" onClick={() => setActiveTab('ai')} style={{ flex: 1, padding: '12px', background: activeTab === '#c084fc' ? '#c084fc' : '#334155', color: activeTab === 'ai' ? 'white' : 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', backgroundColor: activeTab === 'ai' ? '#a855f7' : '#334155' }}>🤖 AI 智能理財顧問</button>
+        <button type="button" onClick={() => setActiveTab('ai')} style={{ flex: 1, padding: '12px', background: activeTab === 'ai' ? '#a855f7' : '#334155', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '14px', transition: 'all 0.2s' }}>🤖 AI 智能理財顧問</button>
       </div>
 
       {activeTab === 'overview' ? (
@@ -166,22 +166,25 @@ export default function App() {
               <input type="number" placeholder="應還金額" value={amount} onChange={e => setAmount(e.target.value)} style={{ padding: '10px', background: '#1e293b', border: '1px solid #475569', borderRadius: '10px', color: 'white', fontSize: '13px' }} />
             </div>
             <div style={{ textAlign: 'right', marginTop: '15px' }}>
-              <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 24px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>確認寫入雲端資料庫</button>
+              <button type="submit" style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '10px 24px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>儲存至雲端</button>
             </div>
           </form>
 
-          {/* 清單展示區 */}
-          <div style={{ textAlign: 'left' }}>
-            <h3 style={{ color: '#38bdf8', borderBottom: '1px solid #334155', paddingBottom: '8px', fontSize: '15px', fontWeight: 'bold', marginBottom: '15px' }}>📋 雲端實時同步帳單清單 ({cards.length} 張卡)：</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px' }}>
-              {cards.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px', background: '#0f172a', borderRadius: '12px', border: '1px solid #334155' }}>雲端目前沒有任何月結單項目，請在上方新增！</div>
-              ) : (
-                cards.map(c => (
-                  <div key={c.id} style={{ background: '#0f172a', border: '1px solid #475569', padding: '18px', borderRadius: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 10px rgba(0,0,0,0.2)' }}>
+          {/* 📋 帳單清單區 */}
+          <div style={{ background: '#0f172a', border: '1px solid #334155', padding: '20px', borderRadius: '16px' }}>
+            <strong style={{ color: '#94a3b8', fontSize: '14px', display: 'block', marginBottom: '12px' }}>📋 雲端託管中帳單 ({cards.length})</strong>
+            {cards.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#64748b', padding: '20px', fontSize: '14px' }}>目前無帳單資料，請在上方錄入。</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {cards.map(card => (
+                  <div key={card.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b', padding: '12px 16px', borderRadius: '10px', border: '1px solid #334155' }}>
                     <div>
-                      <strong style={{ color: '#38bdf8', fontSize: '15px' }}>[{c.bank}]</strong> <span style={{ fontWeight: 'bold', marginLeft: '4px' }}>{c.name}</span>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '6px' }}>📅 繳款到期日: {c.date}</div>
+                      <span style={{ backgroundColor: '#38bdf8', color: '#0f172a', fontSize: '11px', fontWeight: 'bold', padding: '2px 6px', borderRadius: '4px', marginRight: '8px' }}>{card.bank}</span>
+                      <span style={{ fontWeight: 'bold', fontSize: '14px' }}>{card.name}</span>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>到期日: {card.date}</div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                      <span style={{ fontWeight: '900', color: '#f59e0b', fontSize: '18px' }}>HK${Number(c.amount || 0).toLocaleString()}</span>
+                      <span style={{ color: '#f43f5e', fontWeight: '900', fontSize: '15px' }}>HK${Number(card.amount).toLocaleString()}</span>
+                      <button type="button" onClick={() => handleDeleteCard(card.id)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '13px' }}>🗑️</button>
+                    </div>
