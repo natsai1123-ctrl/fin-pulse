@@ -91,7 +91,7 @@ export default function App() {
     useState([
       {
         role: 'ai',
-        text: '你好！已成功接通您的雲端帳單管理台。'
+        text: '已接通您的雲端帳單管理台。'
       }
     ]);
 
@@ -263,7 +263,7 @@ export default function App() {
         0
       );
       let reply =
-        '📊 【雲端自動診斷】待繳總金額為：<strong>HK$' +
+        '📊 待繳總金額為：<strong>HK$' +
         total.toLocaleString() +
         '</strong>。';
       setChatMessages([
@@ -344,7 +344,6 @@ export default function App() {
     fontWeight: 'bold'
   };
 
-  // 🧠 提早解開選單迴圈，規避單行過長
   const renderedBankOptions =
     BANK_OPTIONS.map((b) => (
       <option key={b} value={b}>
@@ -488,3 +487,4 @@ export default function App() {
               style={{
                 background: '#0b0f19',
                 padding: '20px',
+                borderRadius: '16px',
