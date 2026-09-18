@@ -1,129 +1,366 @@
-﻿import React, { useState, useMemo } from 'react';
-import Icon from './Icon';
+﻿import React, {
+  useState,
+  useMemo
+} from 'react';
 
-const INITIAL_TRANSACTIONS = [
-  { id: 'tx-1', name: 'Stripe Payout', type: 'income', amount: 4250.0, category: 'Sales', date: '2026-09-18' },
-  { id: 'tx-2', name: 'AWS Hosting', type: 'expense', amount: 340.5, category: 'Infrastructure', date: '2026-09-17' },
-  { id: 'tx-3', name: 'Figma Sub', type: 'expense', amount: 45.0, category: 'Design Tools', date: '2026-09-16' },
-  { id: 'tx-4', name: 'Client Retainer', type: 'income', amount: 2800.0, category: 'Consulting', date: '2026-09-15' }
-];
+// 🛠️ 將長 SVG 字串拆碎串接
+const p1 =
+  "M12 3v1m0 16v1m9-9h-1M4" +
+  " 12H3m15.364 6.364l-.70" +
+  "7-.707M6.343 6.343l-.70" +
+  "7-.707m12.728 0l-.707.7" +
+  "07M6.343 17.657l-.707.7" +
+  "07M16 12a4 4 0 11-8 0 4" +
+  " 4 0 018 0z";
 
-const METRICS_DATA = [
-  { label: 'Total Portfolio Balance', value: '\$124,850.42', change: '+12.4%', isPositive: true },
-  { label: 'Monthly Revenue', value: '\$18,420.00', change: '+8.2%', isPositive: true },
-  { label: 'Monthly Expenses', value: '\$5,125.50', change: '-3.1%', isPositive: false },
-  { label: 'Net Savings Margin', value: '72.2%', change: '+4.5%', isPositive: true }
+const p2 =
+  "M21 12.79A9 9 0 1111." +
+  "21 3 7 7 0 0021 12.79z";
+
+const Icon = ({
+  name,
+  size = 18,
+  className = ""
+}) => {
+  const icons = {
+    plus: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 4v16m8-8H4"
+      />
+    ),
+    sun: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d={p1}
+      />
+    ),
+    moon: (
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d={p2}
+      />
+    )
+  };
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      className={className}
+    >
+      {icons[name] || null}
+    </svg>
+  );
+};
+
+const INIT_TX = [
+  {
+    id: 't1',
+    name: 'Stripe Payout',
+    amount: 4250
+  },
+  {
+    id: 't2',
+    name: 'AWS Hosting',
+    amount: 340
+  }
 ];
 
 export default function App() {
-  const [darkMode, setDarkMode] = useState(true);
-  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [showModal, setShowModal] = useState(false);
-  const [newTx, setNewTx] = useState({ name: '', amount: '', category: 'Sales', type: 'income' });
+  const [dark, setDark] =
+    useState(true);
+  const [txs, setTxs] =
+    useState(INIT_TX);
+  const [show, setShow] =
+    useState(false);
+  const [name, setName] =
+    useState('');
+  const [amt, setAmt] =
+    useState('');
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter((tx) => {
-      const s = searchQuery.toLowerCase();
-      return (tx.name.toLowerCase().includes(s) || tx.category.toLowerCase().includes(s)) &&
-             (selectedCategory === 'All' || tx.category === selectedCategory);
-    });
-  }, [transactions, searchQuery, selectedCategory]);
-
-  const handleAddTransaction = (e) => {
+  const handleAdd = (e) => {
     e.preventDefault();
-    if (!newTx.name || !newTx.amount) return;
-    setTransactions([{ id: `tx-${Date.now()}`, name: newTx.name, amount: parseFloat(newTx.amount), category: newTx.category, type: newTx.type, date: '2026-09-18' }, ...transactions]);
-    setNewTx({ name: '', amount: '', category: 'Sales', type: 'income' });
-    setShowModal(false);
+    if (!name || !amt) return;
+    setTxs([
+      {
+        id: String(Date.now()),
+        name: name,
+        amount: parseFloat(amt)
+      },
+      ...txs
+    ]);
+    setName('');
+    setAmt('');
+    setShow(false);
   };
 
-  const tBg = darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900';
-  const cBg = darkMode ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200';
-  const iBg = darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200';
+  const bg = dark
+    ? '#0f172a'
+    : '#f8fafc';
+  const txt = dark
+    ? '#f1f5f9'
+    : '#0f172a';
+  const card = dark
+    ? '#1e293b'
+    : '#ffffff';
+  const border = dark
+    ? '1px solid #334155'
+    : '1px solid #e2e8f0';
+
+  const sum = useMemo(() => {
+    return txs.reduce(
+      (s, t) => s + t.amount,
+      0
+    );
+  }, [txs]);
 
   return (
-    <div className={`min-h-screen font-sans p-6 ${tBg}`}>
-      <header className="max-w-7xl mx-auto flex items-center justify-between h-16 mb-8">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-500 flex items-center justify-center text-white font-bold">FP</div>
-          <span className="text-xl font-black bg-gradient-to-r from-emerald-400 to-cyan-500 bg-clip-text text-transparent">FinPulse</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setShowModal(true)} className="bg-emerald-500 text-slate-950 px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 shadow-md">
-            <Icon name="plus" size={16} /> Add Transaction
+    <div
+      style={{
+        minHeight: '100vh',
+        backgroundColor: bg,
+        color: txt,
+        padding: '24px',
+        fontFamily: 'sans-serif'
+      }}
+    >
+      <header
+        style={{
+          display: 'flex',
+          justifyContent:
+            'space-between',
+          alignItems: 'center',
+          borderBottom: border,
+          paddingBottom: '16px',
+          marginBottom: '32px'
+        }}
+      >
+        <span
+          style={{
+            fontSize: '20px',
+            fontWeight: '900'
+          }}
+        >
+          FinPulse PRO
+        </span>
+        <div
+          style={{
+            display: 'flex',
+            gap: '12px'
+          }}
+        >
+          <button
+            onClick={() =>
+              setShow(true)
+            }
+            style={{
+              backgroundColor:
+                '#10b981',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              border: 'none',
+              cursor: 'pointer'
+            }}
+          >
+            Add
           </button>
-          <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg border ${darkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-            <Icon name={darkMode ? "sun" : "moon"} size={18} />
+          <button
+            onClick={() =>
+              setDark(!dark)
+            }
+            style={{
+              padding: '8px',
+              borderRadius: '8px',
+              border: border,
+              backgroundColor: card,
+              color: txt,
+              cursor: 'pointer'
+            }}
+          >
+            <Icon
+              name={
+                dark
+                  ? 'sun'
+                  : 'moon'
+              }
+            />
           </button>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {METRICS_DATA.map((m, i) => (
-            <div key={i} className={`p-6 rounded-2xl border transition-all ${cBg}`}>
-              <div className="text-sm text-slate-400 mb-2">{m.label}</div>
-              <div className="flex items-baseline justify-between">
-                <span className="text-2xl font-bold">{m.value}</span>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${m.isPositive ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>{m.change}</span>
-              </div>
+      <main>
+        <div
+          style={{
+            padding: '24px',
+            borderRadius: '16px',
+            backgroundColor: card,
+            border: border,
+            marginBottom: '32px'
+          }}
+        >
+          <div
+            style={{
+              color: '#94a3b8',
+              fontSize: '14px'
+            }}
+          >
+            Total Balance
+          </div>
+          <div
+            style={{
+              fontSize: '28px',
+              fontWeight: '700'
+            }}
+          >
+            HK$
+            {sum.toLocaleString()}
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '24px',
+            borderRadius: '16px',
+            backgroundColor: card,
+            border: border
+          }}
+        >
+          <h3
+            style={{
+              margin: '0 0 16px 0'
+            }}
+          >
+            Transactions
+          </h3>
+          {txs.map((t) => (
+            <div
+              key={t.id}
+              style={{
+                display: 'flex',
+                justifyContent:
+                  'space-between',
+                padding: '12px 0',
+                borderBottom:
+                  '1px solid' +
+                  ' rgba(0,0,0,0.1)'
+              }}
+            >
+              <span>{t.name}</span>
+              <span
+                style={{
+                  fontWeight: '700'
+                }}
+              >
+                ${t.amount}
+              </span>
             </div>
           ))}
         </div>
-
-        <div className={`p-6 rounded-2xl border ${cBg}`}>
-          <div className="flex flex-col md:flex-row justify-between gap-4 mb-6">
-            <h2 className="text-lg font-bold">Recent Transactions</h2>
-            <div className="flex items-center gap-3">
-              <input type="text" placeholder="Search..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className={`px-4 py-2 rounded-xl text-sm border focus:outline-none ${iBg}`} />
-              <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className={`px-3 py-2 rounded-xl text-sm border focus:outline-none ${iBg}`}>
-                <option value="All">All</option>
-                <option value="Sales">Sales</option>
-                <option value="Infrastructure">Infrastructure</option>
-                <option value="Design Tools">Design Tools</option>
-                <option value="Consulting">Consulting</option>
-              </select>
-            </div>
-          </div>
-
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400">
-                <th className="pb-3">Name</th>
-                <th className="pb-3">Category</th>
-                <th className="pb-3 text-right">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTransactions.map((tx) => (
-                <tr key={tx.id} className="border-b border-slate-800/30">
-                  <td className="py-3 font-medium flex items-center gap-2">
-                    <Icon name={tx.type === 'income' ? 'arrowUpRight' : 'arrowDownLeft'} className={tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'} />
-                    {tx.name}
-                  </td>
-                  <td className="py-3 text-slate-400">{tx.category}</td>
-                  <td className={`py-3 text-right font-semibold ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {tx.type === 'income' ? '+' : '-'}\${tx.amount.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </main>
 
-      {showModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`w-full max-w-md p-6 rounded-2xl border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            <h3 className="text-lg font-bold mb-4">Add Transaction</h3>
-            <form onSubmit={handleAddTransaction} className="space-y-4">
-              <input type="text" value={newTx.name} onChange={(e) => setNewTx({...newTx, name: e.target.value})} className={`w-full p-2.5 rounded-xl border text-sm ${iBg}`} placeholder="Name" required />
-              <input type="number" step="0.01" value={newTx.amount} onChange={(e) => setNewTx({...newTx, amount: e.target.value})} className={`w-full p-2.5 rounded-xl border text-sm ${iBg}`} placeholder="Amount" required />
-              <div className="flex gap-3 justify-end pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-sm border border-slate-800">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-lg text-sm bg-emerald-500 text-slate-950 font-bold">Save</button>
+      {show && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor:
+              'rgba(0,0,0,0.6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent:
+              'center'
+          }}
+        >
+          <div
+            style={{
+              width: '280px',
+              padding: '24px',
+              borderRadius: '16px',
+              backgroundColor: card,
+              border: border
+            }}
+          >
+            <h3
+              style={{
+                margin:
+                  '0 0 16px 0'
+              }}
+            >
+              Add Item
+            </h3>
+            <form
+              onSubmit={handleAdd}
+            >
+              <input
+                type="text"
+                placeholder="Name"
+                value={name}
+                onChange={(e) =>
+                  setName(
+                    e.target.value
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  marginBottom:
+                    '12px',
+                  boxSizing:
+                    'border-box'
+                }}
+                required
+              />
+              <input
+                type="number"
+                placeholder="Amount"
+                value={amt}
+                onChange={(e) =>
+                  setAmt(
+                    e.target.value
+                  )
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  marginBottom:
+                    '16px',
+                  boxSizing:
+                    'border-box'
+                }}
+                required
+              />
+              <div
+                style={{
+                  textAlign: 'right'
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShow(false)
+                  }
+                  style={{
+                    marginRight:
+                      '8px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                >
+                  Save
+                </button>
               </div>
             </form>
           </div>
