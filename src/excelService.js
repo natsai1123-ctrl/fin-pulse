@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx';
-import { addCloudTx } from './db';
+import { db } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
-// 📥 智能讀取、解析 Excel 檔案並一鍵批次同步至雲端
 export const importExcelToCloud = (e, uid, onStart, onSuccess, onError) => {
   const f = e.target.files;
   if (!f || !uid) return;
@@ -12,7 +12,7 @@ export const importExcelToCloud = (e, uid, onStart, onSuccess, onError) => {
     try {
       const d = evt.target.result;
       const wb = XLSX.read(d, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const ws = wb.Sheets[wb.SheetNames];
       const json = XLSX.utils.sheet_to_json(ws);
 
       if (json.length === 0) {
@@ -23,32 +23,34 @@ export const importExcelToCloud = (e, uid, onStart, onSuccess, onError) => {
       let count = 0;
       for (let row of json) {
         const keys = Object.keys(row);
-        
-        // 🧠 智慧模糊比對名稱欄位
         const nK = keys.find(k => 
-          k.includes('名稱') || 
-          k.includes('項目') || 
-          k.toLowerCase().includes('name') ||
-          k.toLowerCase().includes('item')
+          k.includes('名稱') || k.includes('項目') || 
+          k.toLowerCase().includes('name') || k.toLowerCase().includes('item') ||
+          k.includes('描述') || k.toLowerCase().includes('desc')
         ) || '';
-        
-        // 🧠 智慧模糊比對金額欄位
         const aK = keys.find(k => 
-          k.includes('金額') || 
-          k.includes('應還') || 
-          k.toLowerCase().includes('amount') ||
-          k.toLowerCase().includes('price')
+          k.includes('金額') || k.includes('應還') || 
+          k.toLowerCase().includes('amount') || k.toLowerCase().includes('price')
         ) || '';
+        const cK = keys.find(k => k.includes('類別') || k.toLowerCase().includes('category')) || '';
 
         const impName = nK ? String(row[nK]).trim() : 'Excel 匯入交易';
         const impAmt = aK ? parseFloat(row[aK]) || 0 : 0;
+        const impCat = cK ? String(row[cK]).trim() : '9) 其他';
 
-        // 直接調用先前 db.js 的函數寫入雲端 Firestore
-        await addCloudTx(uid, impName, impAmt);
+        const tid = 'tx-xl-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+
+        // 🟢 修正：精準寫入第三頁的 transactions 資料夾，絕對不污染第二頁的 cards
+        await setDoc(doc(db, 'users', uid, 'transactions', tid), {
+          description: impName,
+          amount: impAmt,
+          category: impCat,
+          date: '2026-09-18'
+        });
         count++;
       }
 
-      e.target.value = ''; // 清空 file input
+      e.target.value = '';
       onSuccess(count);
     } catch (err) {
       console.error(err);
@@ -56,5 +58,5 @@ export const importExcelToCloud = (e, uid, onStart, onSuccess, onError) => {
       onError('解析檔案失敗，請檢查格式。');
     }
   };
-  r.readAsArrayBuffer(f[0]);
+  r.readAsArrayBuffer(f);
 };

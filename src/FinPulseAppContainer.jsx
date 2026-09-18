@@ -17,16 +17,14 @@ const CATEGORY_COLORS = { '1) 餐飲': '#fbbf24', '2) 交通': '#38bdf8', '3) �
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [cards, setCards] = useState([]);
-  const [txs, setTxs] = useState([]); // 📝 簽賬明細狀態
+  const [txs, setTxs] = useState([]);
   const [uid, setUid] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // 卡片表單狀態
   const [newBank, setNewBank] = useState('花旗銀行');
   const [newCardName, setNewCardName] = useState('');
   const [newRepaymentAmount, setNewRepaymentAmount] = useState('');
 
-  // 簽賬交易表單狀態
   const [transDesc, setTransDesc] = useState('');
   const [transAmt, setTransAmt] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('1) 餐飲');
@@ -43,11 +41,9 @@ export default function App() {
     onAuthStateChanged(auth, user => {
       if (user) {
         setUid(user.uid);
-        // 監聽第二頁：信用卡卡體
         unsubCards = onSnapshot(collection(db, 'users', user.uid, 'cards'), snap => {
           setCards(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
-        // 監聽第三頁：簽賬交易紀錄明細
         unsubTxs = onSnapshot(collection(db, 'users', user.uid, 'transactions'), snap => {
           setTxs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         });
@@ -56,7 +52,6 @@ export default function App() {
     return () => { unsubCards(); unsubTxs(); };
   }, []);
 
-  // 新增第二頁：信用卡卡體
   const handleAddCard = async (e) => {
     e.preventDefault();
     if (!newCardName || !newRepaymentAmount || !uid) return;
@@ -68,7 +63,6 @@ export default function App() {
     } catch (err) { alert('儲存失敗！'); }
   };
 
-  // 新增第三頁：手動日常簽賬明細
   const handleAddTx = async (e) => {
     e.preventDefault();
     if (!transDesc || !transAmt || !uid) return;
@@ -80,9 +74,8 @@ export default function App() {
     } catch (err) { alert('儲存失敗！'); }
   };
 
-  // 第三頁：Excel 智能讀取解析並寫入簽賬明細（第三頁）
   const handleUpload = (e) => {
-    importExcelToCloud(e, uid, () => setLoading(true), (count) => { setLoading(false); alert('🎉 成功智慧匯入 ' + count + ' 筆明細紀錄至第三頁！'); }, (err) => alert(err));
+    importExcelToCloud(e, uid, () => setLoading(true), (count) => { setLoading(false); alert('🎉 成功將 ' + count + ' 筆消費明細匯入至第三頁明細！'); }, (err) => alert(err));
   };
 
   const handleDeleteCard = async (id) => {
@@ -99,7 +92,9 @@ export default function App() {
 
   const totalUnpaid = useMemo(() => cards.reduce((sum, c) => sum + (c.isPaid ? 0 : Number(c.amount || 0)), 0), [cards]);
   
-  // 圓餅圖現在改為動態加總第三頁「簽賬明細」的分類佔比
+  // 🟢 實時自動加總第三頁所有 Excel 與手動錄入的簽賬總金額
+  const totalSpent = useMemo(() => txs.reduce((sum, t) => sum + Number(t.amount || 0), 0), [txs]);
+
   const pieData = useMemo(() => {
     const map = {};
     txs.forEach(t => { const cat = t.category || '9) 其他'; map[cat] = (map[cat] || 0) + Number(t.amount || 0); });
@@ -111,7 +106,7 @@ export default function App() {
     const newMsgs = [...chatMessages, { role: 'user', text: chatInput.trim() }];
     setChatMessages(newMsgs); setChatInput('');
     setTimeout(() => {
-      setChatMessages([...newMsgs, { role: 'ai', text: `📊 目前累計共錄入 ${txs.length} 筆簽賬明細項目。` }]);
+      setChatMessages([...newMsgs, { role: 'ai', text: `📊 目前流水帳內累計錄入 ${txs.length} 筆明細。` }]);
     }, 300);
   };
 
@@ -130,7 +125,7 @@ export default function App() {
         <button onClick={() => setActiveTab('ai')} style={tabStyle('ai')}>🤖 AI 理財小幫手</button>
       </div>
       <HeroBanner txs={cards} onToggle={handleTogglePaid} />
-      {activeTab === 'overview' && <OverviewSection totalUnpaid={totalUnpaid} loading={loading} pieData={pieData} txsCount={txs.length} />}
+      {activeTab === 'overview' && <OverviewSection totalUnpaid={totalUnpaid} loading={loading} pieData={pieData} txsCount={txs.length} totalSpent={totalSpent} />}
       {activeTab === 'cards' && <CardsSection handleAddCard={handleAddCard} newBank={newBank} setNewBank={setNewBank} BANK_OPTIONS={BANK_OPTIONS} newCardName={newCardName} setNewCardName={setNewCardName} newRepaymentAmount={newRepaymentAmount} setNewRepaymentAmount={setNewRepaymentAmount} cards={cards} handleTogglePaid={handleTogglePaid} handleDeleteCard={handleDeleteCard} />}
       {activeTab === 'details' && <DetailsSection handleAddTx={handleAddTx} transDesc={transDesc} setTransDesc={setTransDesc} transAmt={transAmt} setTransAmt={setTransAmt} selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} CATEGORY_OPTIONS={CATEGORY_OPTIONS} cards={cards} transCardId={transCardId} setTransCardId={setTransCardId} handleUpload={handleUpload} txs={txs} handleDeleteTx={handleDeleteTx} />}
       {activeTab === 'ai' && <AiSection chatMessages={chatMessages} chatInput={chatInput} setChatInput={setChatInput} onSend={handleSendMessage} />}
