@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from './firebase';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore'; // 🟢 修正：對齊正確路徑
 import { importExcelToCloud } from './excelService';
 import TopBar from './TopBar';
 import HeroBanner from './HeroBanner';
@@ -91,8 +91,6 @@ export default function App() {
   };
 
   const totalUnpaid = useMemo(() => cards.reduce((sum, c) => sum + (c.isPaid ? 0 : Number(c.amount || 0)), 0), [cards]);
-  
-  // 🟢 實時自動加總第三頁所有 Excel 與手動錄入的簽賬總金額
   const totalSpent = useMemo(() => txs.reduce((sum, t) => sum + Number(t.amount || 0), 0), [txs]);
 
   const pieData = useMemo(() => {
