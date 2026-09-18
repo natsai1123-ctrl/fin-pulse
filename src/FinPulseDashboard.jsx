@@ -3,6 +3,7 @@ import Icon from './Icon';
 import AnalyticsChart from './AnalyticsChart';
 import { initCloudSync, addCloudTx, deleteCloudTx } from './db';
 import { importExcelToCloud } from './excelService';
+import { getAiReply } from './aiService';
 
 export default function App() {
   const [dark, setDark] = useState(true);
@@ -12,6 +13,12 @@ export default function App() {
   const [show, setShow] = useState(false);
   const [name, setName] = useState('');
   const [amt, setAmt] = useState('');
+
+  // AI 智慧聊天狀態
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'ai', text: '你好！我是 FinPulse 理財顧問。我已接通您的雲端帳單，您可以問我「財務狀況」或「還款建議」！' }
+  ]);
 
   useEffect(() => {
     initCloudSync(
@@ -43,6 +50,21 @@ export default function App() {
     }
   };
 
+  // 🤖 處理發送訊息給 AI
+  const handleSendChat = () => {
+    const query = chatInput.trim();
+    if (!query) return;
+
+    const newMsgs = [...chatMessages, { role: 'user', text: query }];
+    setChatMessages(newMsgs);
+    setChatInput('');
+
+    setTimeout(() => {
+      const aiReply = getAiReply(query, txs);
+      setChatMessages([...newMsgs, { role: 'ai', text: aiReply }]);
+    }, 300);
+  };
+
   const bg = dark ? '#0f172a' : '#f8fafc';
   const txt = dark ? '#f1f5f9' : '#0f172a';
   const card = dark ? '#1e293b' : '#ffffff';
@@ -60,16 +82,15 @@ export default function App() {
         </div>
       </header>
 
-      <main style={{ maxWidth: '600px', margin: '0 auto' }}>
-        <div style={{ padding: '24px', borderRadius: '16px', backgroundColor: card, border: border, marginBottom: '32px' }}>
+      <main style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+        <div style={{ padding: '24px', borderRadius: '16px', backgroundColor: card, border: border }}>
           <div style={{ color: '#94a3b8', fontSize: '14px' }}>Total Balance</div>
           <div style={{ fontSize: '28px', fontWeight: '700' }}>{"HK$ " + sum.toLocaleString()}</div>
         </div>
 
-        {/* 📊 動態 Recharts 數據分析圖表區 */}
         <AnalyticsChart txs={txs} dark={dark} />
 
-        <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: '2px dashed #a855f7', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: '2px dashed #a855f7', padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
             <strong style={{ color: '#a855f7', fontSize: '14px', display: 'block' }}>智能 Excel 帳單匯入</strong>
             <span style={{ fontSize: '11px', color: '#64748b' }}>支援自動模糊對齊項目與金額欄位</span>
@@ -92,6 +113,22 @@ export default function App() {
               </div>
             ))
           )}
+        </div>
+
+        {/* 🤖 AI 智能理財顧問對話框 UI 專區 */}
+        <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: border, padding: '20px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <strong style={{ color: '#a855f7', fontSize: '14px' }}>🤖 FinPulse AI 智慧理財顧問</strong>
+          <div style={{ height: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', paddingRight: '5px' }}>
+            {chatMessages.map((msg, idx) => (
+              <div key={idx} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', background: msg.role === 'user' ? '#0ea5e9' : card, border: msg.role === 'user' ? 'none' : border, color: msg.role === 'user' ? '#fff' : txt, padding: '10px 14px', borderRadius: '12px', maxWidth: '85%', fontSize: '13px', lineHeight: '1.5' }}>
+                <div dangerouslySetInnerHTML={{ __html: msg.text }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input type="text" placeholder="問問 AI：財務狀況如何？" value={chatInput} onChange={e => setChatInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendChat()} style={{ flex: 1, padding: '10px 14px', background: dark ? '#1e293b' : '#fff', border: border, borderRadius: '10px', color: txt, fontSize: '13px', outline: 'none' }} />
+            <button type="button" onClick={handleSendChat} style={{ backgroundColor: '#a855f7', color: 'white', border: 'none', padding: '0 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>發送</button>
+          </div>
         </div>
       </main>
 
