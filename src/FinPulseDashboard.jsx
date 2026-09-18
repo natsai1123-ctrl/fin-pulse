@@ -54,7 +54,7 @@ export default function App() {
         <span style={{ fontSize: '20px', fontWeight: '900' }}>FinPulse PRO</span>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           <span style={{ fontSize: '12px', color: loading ? '#fbbf24' : '#34d399' }}>{loading ? '⏳ 同步中...' : '🟢 雲端同步'}</span>
-          <button onClick={() => setShow(true)} style={{ backgroundColor: '#10b981', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Add</button>
+          <button onClick={() => setShowModal(true)} style={{ backgroundColor: '#10b981', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}>Add</button>
           <button onClick={() => setDark(!dark)} style={{ padding: '8px', borderRadius: '8px', border: border, backgroundColor: card, color: txt, cursor: 'pointer' }}><Icon name={dark ? 'sun' : 'moon'} /></button>
         </div>
       </header>
@@ -65,13 +65,15 @@ export default function App() {
           <div style={{ fontSize: '28px', fontWeight: '700' }}>{"HK$ " + sum.toLocaleString()}</div>
         </div>
 
-        <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: '2px dashed #a855f7', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* 📥 修正版：讓原生選擇檔案按鈕百分之百露出來 */}
+        <div style={{ background: dark ? '#0f172a' : '#f1f5f9', border: '2px dashed #a855f7', padding: '20px', borderRadius: '16px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
             <strong style={{ color: '#a855f7', fontSize: '14px', display: 'block' }}>智能 Excel 帳單匯入</strong>
             <span style={{ fontSize: '11px', color: '#64748b' }}>支援自動模糊對齊項目與金額欄位</span>
           </div>
-          <input type="file" accept=".xlsx, .xls, .csv" onChange={handleUpload} id="xl-in" style={{ display: 'none' }} />
-          <label htmlFor="xl-in" style={{ backgroundColor: '#a855f7', color: 'white', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '13px' }}>📁 選擇檔案</label>
+          <div>
+            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleUpload} style={{ color: txt, fontSize: '13px', cursor: 'pointer' }} />
+          </div>
         </div>
 
         <div style={{ padding: '24px', borderRadius: '16px', backgroundColor: card, border: border }}>
