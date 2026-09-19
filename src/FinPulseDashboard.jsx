@@ -3,7 +3,7 @@ import { AlertCircle, ArrowDownToLine, ArrowUpRight, Bot, Check, CheckCircle2, C
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { db, auth } from './firebase';
 import { signInAnonymously } from 'firebase/auth';
-import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
 
 export const STORAGE_KEY_CARDS = 'STORAGE_KEY_CARDS';
 export const STORAGE_KEY_TX = 'STORAGE_KEY_TX';
@@ -26,6 +26,17 @@ const TITANIUM_THEMES = [
 const money = (value) => `HK$${Number(value || 0).toLocaleString('en-HK', { maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
 const fromStorage = (key) => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } };
+const parseExcelDate = (value) => {
+  if (!value) return today();
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  if (typeof value === 'number') {
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    return Number.isNaN(date.getTime()) ? today() : date.toISOString().slice(0, 10);
+  }
+  const parsed = new Date(String(value).trim());
+  return Number.isNaN(parsed.getTime()) ? String(value).trim() : parsed.toISOString().slice(0, 10);
+};
+const transactionKey = (item) => [item.date, item.description, item.cardId, Number(item.amount || 0), item.category].join('|').toLowerCase();
 
 function Glass({ children, className = '' }) { return <section className={`glass ${className}`}>{children}</section>; }
 function Button({ children, variant = 'ghost', className = '', ...props }) { return <button className={`button button-${variant} ${className}`} {...props}>{children}</button>; }
@@ -56,8 +67,8 @@ export default function FinPulseDashboard() {
     let stopCards = () => {}, stopTransactions = () => {};
     signInAnonymously(auth).then(({ user }) => {
       setUid(user.uid); setCloud('connected');
-      stopCards = onSnapshot(collection(db, 'users', user.uid, 'cards'), (snapshot) => { if (!snapshot.empty) writeLocal(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })), null); }, () => setCloud('local'));
-      stopTransactions = onSnapshot(collection(db, 'users', user.uid, 'transactions'), (snapshot) => { if (!snapshot.empty) writeLocal(null, snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))); }, () => setCloud('local'));
+      stopCards = onSnapshot(collection(db, 'users', user.uid, 'cards'), (snapshot) => { writeLocal(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })), null); }, () => setCloud('local'));
+      stopTransactions = onSnapshot(collection(db, 'users', user.uid, 'transactions'), (snapshot) => { writeLocal(null, snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))); }, () => setCloud('local'));
     }).catch(() => setCloud('local'));
     return () => { stopCards(); stopTransactions(); };
   }, []);
@@ -65,13 +76,43 @@ export default function FinPulseDashboard() {
     writeLocal(type === 'cards' ? next : null, type === 'transactions' ? next : null);
     if (!uid) return;
     setSyncing(true);
-    try { await Promise.all(next.map((item) => setDoc(doc(db, 'users', uid, type, item.id), item))); setCloud('connected'); } catch { setCloud('local'); }
+    try {
+      const existing = await getDocs(collection(db, 'users', uid, type));
+      const nextIds = new Set(next.map((item) => item.id));
+      const batch = writeBatch(db);
+      existing.docs.forEach((item) => { if (!nextIds.has(item.id)) batch.delete(item.ref); });
+      next.forEach((item) => batch.set(doc(db, 'users', uid, type, item.id), item));
+      await batch.commit();
+      setCloud('connected');
+    } catch { setCloud('local'); }
     setSyncing(false);
   };
   const removeItem = async (type, id) => {
     const list = type === 'cards' ? cards : transactions;
     writeLocal(type === 'cards' ? list.filter((item) => item.id !== id) : null, type === 'transactions' ? list.filter((item) => item.id !== id) : null);
     if (uid) { try { await deleteDoc(doc(db, 'users', uid, type, id)); } catch { setCloud('local'); } }
+  };
+  const clearAllData = async () => {
+    if (!window.confirm('確定清空所有資料嗎？')) return;
+    writeLocal([], []);
+    if (!uid) { setToast('資料已清空'); return; }
+    setSyncing(true);
+    try {
+      const batch = writeBatch(db);
+      const [cardSnapshot, txSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users', uid, 'cards')),
+        getDocs(collection(db, 'users', uid, 'transactions'))
+      ]);
+      [...cardSnapshot.docs, ...txSnapshot.docs].forEach((item) => batch.delete(item.ref));
+      await batch.commit();
+      setCloud('connected');
+      setToast('資料已清空');
+    } catch {
+      setCloud('local');
+      setToast('本機資料已清空，雲端同步失敗');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const stats = useMemo(() => {
@@ -96,17 +137,21 @@ export default function FinPulseDashboard() {
   const importExcel = async (event) => {
     const file = event.target.files?.[0]; if (!file) return;
     try {
-      const XLSX = await import('xlsx'); const book = XLSX.read(await file.arrayBuffer(), { type: 'array' }); const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]]);
+      const XLSX = await import('xlsx'); const book = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true, dateNF: 'yyyy-mm-dd' }); const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]]);
       const value = (row, names) => { const key = Object.keys(row).find((item) => names.some((name) => item.toLowerCase().includes(name))); return key ? row[key] : ''; };
-      const imported = rows.map((row, index) => ({ id: `excel-${Date.now()}-${index}`, date: String(value(row, ['日期', 'date', 'time']) || today()), description: String(value(row, ['說明', '描述', 'description', 'name', '項目']) || 'Excel 簽賬'), cardId: cards.find((card) => String(value(row, ['卡片', 'card'])).includes(card.name))?.id || '', amount: Number(value(row, ['金額', 'amount', 'value'])) || 0, category: CATEGORIES.find((category) => String(value(row, ['分類', 'category'])).includes(category)) || '其他' }));
-      await saveCollection('transactions', [...imported, ...transactions]); setToast(`已匯入 ${imported.length} 筆交易`);
+      const imported = rows.map((row, index) => ({ id: `tx_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 9)}`, date: parseExcelDate(value(row, ['日期', 'date', 'time'])), description: String(value(row, ['說明', '描述', 'description', 'name', '項目']) || 'Excel 簽賬').trim(), cardId: cards.find((card) => String(value(row, ['卡片', 'card'])).includes(card.name))?.id || '', amount: Number(value(row, ['金額', 'amount', 'value'])) || 0, category: CATEGORIES.find((category) => String(value(row, ['分類', 'category'])).includes(category)) || '其他' }));
+      const overwrite = window.confirm('按「確定」覆蓋現有交易，按「取消」追加至現有交易並自動去重。');
+      const base = overwrite ? [] : transactions;
+      const seen = new Set(base.map(transactionKey));
+      const uniqueImported = imported.filter((item) => { const key = transactionKey(item); if (seen.has(key)) return false; seen.add(key); return true; });
+      await saveCollection('transactions', [...uniqueImported, ...base]); setToast(`已匯入 ${uniqueImported.length} 筆交易`);
     } catch { setToast('Excel 匯入失敗，請檢查檔案格式'); }
     event.target.value = '';
   };
   const exportJson = () => { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([JSON.stringify({ cards, transactions }, null, 2)], { type: 'application/json' })); link.download = `finpulse-${today()}.json`; link.click(); URL.revokeObjectURL(link.href); };
   const filtered = transactions.filter((tx) => `${tx.description} ${cards.find((card) => card.id === tx.cardId)?.name || ''}`.toLowerCase().includes(query.toLowerCase()) && (cardFilter === 'all' || tx.cardId === cardFilter) && (categoryFilter === 'all' || tx.category === categoryFilter));
 
-  return <div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><Wallet size={18} /></div><div><strong>FINPULSE</strong><small>PERSONAL FINANCE OS</small></div></div><div className="header-actions"><span className={`sync-status ${cloud}`}><span className="status-dot" />{syncing ? '同步中' : cloud === 'connected' ? <><CloudCheck size={14} />雲端同步</> : <><Cloud size={14} />本機模式</>}</span><Button onClick={() => { if (window.confirm('確定清空所有資料嗎？')) { writeLocal([], []); setToast('資料已清空'); } }}><RefreshCcw size={15} />清空資料</Button><Button onClick={() => { writeLocal(cards, transactions); setToast('資料已儲存'); }}><Database size={15} />手動儲存</Button><Button onClick={() => uploadRef.current?.click()}><Upload size={15} />匯入 Excel</Button><input ref={uploadRef} hidden type="file" accept=".xlsx,.xls" onChange={importExcel} /><Button onClick={exportJson}><Download size={15} />備份 JSON</Button></div></header><main className="container"><div className="page-heading"><div><p className="eyebrow">SATURDAY, SEPTEMBER 19, 2026</p><h1>你的財務脈搏<span className="cyan">.</span></h1><p className="subtle">清晰掌握每一筆流動，讓每個決定都更有底氣。</p></div><div className="heading-stat"><ArrowUpRight size={18} /><span>本月支出</span><strong>{money(stats.spent)}</strong></div></div><nav className="tabs">{[["overview", LayoutDashboard, '數據總覽與分析'], ["cards", CreditCard, '信用卡管理'], ["transactions", FileSpreadsheet, '簽賬明細'], ["ai", Bot, 'AI 理財小幫手']].map(([id, Icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon size={17} />{label}{id === 'cards' && <b>{cards.length}</b>}{id === 'transactions' && <b>{transactions.length}</b>}</button>)}</nav>{tab === 'overview' && <Overview stats={stats} urgent={urgent} pieData={pieData} barData={barData} markPaid={() => urgent && saveCollection('cards', cards.map((card) => card.id === urgent.id ? { ...card, isPaid: true } : card))} />}{tab === 'cards' && <CardsView cards={cards} open={() => { setEditingCard(null); setModal(true); }} edit={(card) => { setEditingCard(card); setModal(true); }} toggle={(card) => saveCollection('cards', cards.map((item) => item.id === card.id ? { ...item, isPaid: !item.isPaid } : item))} remove={(id) => removeItem('cards', id)} updateDate={(id, dueDate) => saveCollection('cards', cards.map((item) => item.id === id ? { ...item, dueDate } : item))} />}{tab === 'transactions' && <TransactionsView cards={cards} transactions={filtered} query={query} setQuery={setQuery} cardFilter={cardFilter} setCardFilter={setCardFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} add={addTransaction} remove={(id) => removeItem('transactions', id)} updateCategory={(id, category) => saveCollection('transactions', transactions.map((item) => item.id === id ? { ...item, category } : item))} />}{tab === 'ai' && <AiView cards={cards} transactions={transactions} />}</main>{modal && <CardModal card={editingCard} close={() => { setModal(false); setEditingCard(null); }} save={saveCard} />}{toast && <div className="toast"><CheckCircle2 size={16} />{toast}<button onClick={() => setToast('')}><X size={14} /></button></div>}</div>;
+  return <div className="app-shell"><header className="topbar"><div className="brand"><div className="brand-mark"><Wallet size={18} /></div><div><strong>FINPULSE</strong><small>PERSONAL FINANCE OS</small></div></div><div className="header-actions"><span className={`sync-status ${cloud}`}><span className="status-dot" />{syncing ? '同步中' : cloud === 'connected' ? <><CloudCheck size={14} />雲端同步</> : <><Cloud size={14} />本機模式</>}</span><Button onClick={clearAllData}><RefreshCcw size={15} />清空資料</Button><Button onClick={() => { writeLocal(cards, transactions); setToast('資料已儲存'); }}><Database size={15} />手動儲存</Button><Button onClick={() => uploadRef.current?.click()}><Upload size={15} />匯入 Excel</Button><input ref={uploadRef} hidden type="file" accept=".xlsx,.xls" onChange={importExcel} /><Button onClick={exportJson}><Download size={15} />備份 JSON</Button></div></header><main className="container"><div className="page-heading"><div><p className="eyebrow">SATURDAY, SEPTEMBER 19, 2026</p><h1>你的財務脈搏<span className="cyan">.</span></h1><p className="subtle">清晰掌握每一筆流動，讓每個決定都更有底氣。</p></div><div className="heading-stat"><ArrowUpRight size={18} /><span>本月支出</span><strong>{money(stats.spent)}</strong></div></div><nav className="tabs">{[["overview", LayoutDashboard, '數據總覽與分析'], ["cards", CreditCard, '信用卡管理'], ["transactions", FileSpreadsheet, '簽賬明細'], ["ai", Bot, 'AI 理財小幫手']].map(([id, Icon, label]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}><Icon size={17} />{label}{id === 'cards' && <b>{cards.length}</b>}{id === 'transactions' && <b>{transactions.length}</b>}</button>)}</nav>{tab === 'overview' && <Overview stats={stats} urgent={urgent} pieData={pieData} barData={barData} markPaid={() => urgent && saveCollection('cards', cards.map((card) => card.id === urgent.id ? { ...card, isPaid: true } : card))} />}{tab === 'cards' && <CardsView cards={cards} open={() => { setEditingCard(null); setModal(true); }} edit={(card) => { setEditingCard(card); setModal(true); }} toggle={(card) => saveCollection('cards', cards.map((item) => item.id === card.id ? { ...item, isPaid: !item.isPaid } : item))} remove={(id) => removeItem('cards', id)} updateDate={(id, dueDate) => saveCollection('cards', cards.map((item) => item.id === id ? { ...item, dueDate } : item))} />}{tab === 'transactions' && <TransactionsView cards={cards} transactions={filtered} query={query} setQuery={setQuery} cardFilter={cardFilter} setCardFilter={setCardFilter} categoryFilter={categoryFilter} setCategoryFilter={setCategoryFilter} add={addTransaction} remove={(id) => removeItem('transactions', id)} updateCategory={(id, category) => saveCollection('transactions', transactions.map((item) => item.id === id ? { ...item, category } : item))} />}{tab === 'ai' && <AiView cards={cards} transactions={transactions} />}</main>{modal && <CardModal card={editingCard} close={() => { setModal(false); setEditingCard(null); }} save={saveCard} />}{toast && <div className="toast"><CheckCircle2 size={16} />{toast}<button onClick={() => setToast('')}><X size={14} /></button></div>}</div>;
 }
 
 function Overview({ stats, urgent, pieData, barData, markPaid }) { return <><>{urgent && <Glass className={`alert-banner ${urgent.dueDate < today() ? 'overdue' : ''}`}><AlertCircle size={20} /><div className="alert-copy"><strong>{urgent.dueDate < today() ? '還款已逾期' : '即將到期的還款提醒'}</strong><span>{urgent.name} · 到期日 {urgent.dueDate || '未設定'} · 應還 <b>{money(urgent.amount)}</b></span></div><Button variant="success" onClick={markPaid}><Check size={15} />標記為已還款</Button></Glass>}</><div className="kpi-grid"><Kpi icon={Wallet} label="本期待繳總金額" value={money(stats.due)} meta={`已還款 ${money(stats.paid)}`} tone="cyan" /><Kpi icon={ArrowDownToLine} label="本期總簽賬支出" value={money(stats.spent)} meta="全部交易紀錄" tone="rose" /><Kpi icon={CreditCard} label="待還款卡片" value={`${stats.pending.length} 張`} meta="未結清卡片" tone="amber" /><Kpi icon={CheckCircle2} label="還款完成率" value={`${stats.rate.toFixed(0)}%`} meta="本期整體進度" tone="emerald" progress={stats.rate} /></div><div className="chart-grid"><Glass className="chart-panel"><div className="section-title"><div><p className="eyebrow">SPENDING MIX</p><h2>消費分類</h2></div><span className="chart-note">本期支出佔比</span></div>{pieData.length ? <div className="donut-wrap"><ResponsiveContainer width="55%" height={230}><PieChart><Pie data={pieData} dataKey="value" innerRadius={68} outerRadius={94} paddingAngle={3}>{pieData.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip content={<ChartTip />} /></PieChart></ResponsiveContainer><div className="legend-list">{pieData.map((item) => <div key={item.name}><i style={{ background: item.color }} />{item.name}<b>{money(item.value)}</b></div>)}</div></div> : <Empty>新增簽賬後，這裡會顯示消費結構</Empty>}</Glass><Glass className="chart-panel"><div className="section-title"><div><p className="eyebrow">CARD PERFORMANCE</p><h2>信用卡使用概覽</h2></div><span className="chart-note">簽賬額 ／ 應還金額</span></div>{barData.length ? <ResponsiveContainer width="100%" height={260}><BarChart data={barData}><CartesianGrid stroke="#1e293b" vertical={false} /><XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} /><YAxis stroke="#64748b" tick={{ fontSize: 10 }} /><Tooltip content={<ChartTip />} /><Legend /><Bar dataKey="spent" name="簽賬額" fill="#22d3ee" radius={[4, 4, 0, 0]} /><Bar dataKey="due" name="應還金額" fill="#818cf8" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer> : <Empty>新增信用卡後，這裡會顯示比較</Empty>}</Glass></div></>;
