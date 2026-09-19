@@ -20,6 +20,10 @@
 @media (max-width: 950px) { .topbar { height: auto; gap: 15px; align-items: flex-start; padding: 17px 4vw; flex-direction: column; } .header-actions { width: 100%; overflow-x: auto; } .kpi-grid { grid-template-columns: repeat(2,1fr); } .chart-grid, .ai-layout { grid-template-columns: 1fr; } .ai-side { display: none; } .card-grid { grid-template-columns: repeat(2,1fr); } }
 @media (max-width: 650px) { .container { padding-top: 32px; } .page-heading { align-items: flex-start; flex-direction: column; gap: 20px; } .heading-stat { padding-left: 0; border: 0; } .tabs { overflow-x: auto; } .tabs button { flex: 0 0 auto; padding: 10px 12px; } .kpi-grid, .card-grid, .transaction-layout { grid-template-columns: 1fr; } .alert-banner { align-items: flex-start; flex-wrap: wrap; } .alert-banner .button { margin-left: 34px; } .filters { flex-wrap: wrap; } .search { flex-basis: 100%; } .filters > select { flex: 1; } .donut-wrap { flex-direction: column; } .donut-wrap > div { width: 100% !important; } .quick-asks { overflow-x: auto; } .quick-asks button { flex: 0 0 auto; } }
 
+/* Transaction date and card selector contrast */
+.dark-date { color-scheme: dark; }
+.card-selector { min-width: 120px; color: #bae6fd; background: rgba(14, 165, 233, .12); }
+
 /* FinPulse control and card contrast refinements */
 .header-actions .button { padding: 8px 14px; border-radius: 12px; font-size: 12px; font-weight: 600; backdrop-filter: blur(12px); box-shadow: 0 6px 16px rgba(2, 6, 23, .22); transition: background-color .2s ease, border-color .2s ease, color .2s ease, transform .15s ease; }
 .header-actions .button:active { transform: scale(.95); }
