@@ -40,6 +40,12 @@
 .card-top > span:first-child { font-size: 13px; letter-spacing: .04em; text-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .card-status { display: inline-flex; align-items: center; gap: 4px; padding: 4px 7px; border: 1px solid rgba(251, 146, 60, .45); border-radius: 999px; color: #fed7aa; background: rgba(234, 88, 12, .22); font-size: 10px; }
 .card-status.paid { border-color: rgba(52, 211, 153, .45); color: #a7f3d0; background: rgba(16, 185, 129, .2); }
+.theme-name { display: none; }
+.credit-card[data-theme="原色鈦"] .card-status { color: #a5f3fc; border-color: rgba(34, 211, 238, .35); background: rgba(6, 182, 212, .18); }
+.credit-card[data-theme="沙漠鈦"] .card-status { color: #fde68a; border-color: rgba(245, 158, 11, .4); background: rgba(180, 83, 9, .22); }
+.credit-card[data-theme="深空黑鈦"] .card-status { color: #ddd6fe; border-color: rgba(168, 85, 247, .4); background: rgba(126, 34, 206, .2); }
+.credit-card[data-theme="藍鈦"] .card-status { color: #bae6fd; border-color: rgba(56, 189, 248, .4); background: rgba(14, 116, 144, .22); }
+.credit-card[data-theme="白銀鈦"] .card-status { color: #a7f3d0; border-color: rgba(52, 211, 153, .4); background: rgba(5, 150, 105, .2); }
 .card-bottom strong { color: #fff; font-size: 18px; font-weight: 800; letter-spacing: .04em; text-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
 .card-due strong { font-size: 18px; font-weight: 800; }
 .chip { background: linear-gradient(135deg, #fcd34d, #fef3c7 45%, #b45309); box-shadow: inset 0 1px 2px rgba(255,255,255,.75), 0 3px 8px rgba(0,0,0,.35); }
