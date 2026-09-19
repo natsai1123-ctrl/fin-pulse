@@ -23,7 +23,7 @@ const TITANIUM_THEMES = [
   { name: '藍鈦', cardBg: 'bg-gradient-to-br from-slate-900 via-indigo-950 to-zinc-900 border-indigo-500/40 text-indigo-100', badgeBg: 'bg-sky-500/20 text-sky-300 border-sky-500/30', colors: ['#0f172a', '#1e1b4b', '#bae6fd'] },
   { name: '白銀鈦', cardBg: 'bg-gradient-to-br from-slate-600 via-slate-700 to-zinc-800 border-slate-400/50 text-slate-100', badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', colors: ['#475569', '#334155', '#a7f3d0'] }
 ];
-const money = (value) => `HK$${Number(value || 0).toLocaleString('en-HK', { maximumFractionDigits: 2 })}`;
+const money = (value) => `HK$${Math.abs(Number(value || 0)).toLocaleString('en-HK', { maximumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().slice(0, 10);
 const fromStorage = (key) => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } };
 const parseExcelDate = (value) => {
