@@ -1,10 +1,10 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDrGC_b-M7-VeqDhzsBY7JvP8mznMxBIII",
-  authDomain: "://firebaseapp.com",
+  authDomain: "fin-pulse-adf61.firebaseapp.com",
   projectId: "fin-pulse-adf61",
   storageBucket: "fin-pulse-adf61.firebasestorage.app",
   messagingSenderId: "960592027576",
