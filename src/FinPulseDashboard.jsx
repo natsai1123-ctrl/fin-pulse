@@ -94,39 +94,39 @@ const BANK_STYLES = {
 };
 const TITANIUM_THEMES = [
   {
-    name: "原色鈦",
+    name: "極光幻藍",
     cardBg:
-      "bg-gradient-to-br from-stone-700 via-zinc-800 to-slate-900 border-stone-500/40 text-stone-100",
-    badgeBg: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-    colors: ["#57534e", "#27272a", "#cffafe"],
+      "bg-gradient-to-br from-cyan-600 via-indigo-700 to-slate-900 border-cyan-400/50 text-white shadow-lg shadow-cyan-950/50",
+    badgeBg: "bg-cyan-400/20 text-cyan-200 border-cyan-300/40 font-bold",
+    colors: ["#06b6d4", "#3b82f6", "#cffafe"],
   },
   {
-    name: "沙漠鈦",
+    name: "電光霓紫",
     cardBg:
-      "bg-gradient-to-br from-amber-950 via-stone-800 to-zinc-900 border-amber-500/40 text-amber-100",
-    badgeBg: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-    colors: ["#451a03", "#292524", "#fcd34d"],
+      "bg-gradient-to-br from-fuchsia-600 via-purple-700 to-slate-900 border-fuchsia-400/50 text-white shadow-lg shadow-fuchsia-950/50",
+    badgeBg: "bg-fuchsia-400/20 text-fuchsia-200 border-fuchsia-300/40 font-bold",
+    colors: ["#d946ef", "#8b5cf6", "#fae8ff"],
   },
   {
-    name: "深空黑鈦",
+    name: "耀光赤金",
     cardBg:
-      "bg-gradient-to-br from-neutral-900 via-zinc-900 to-black border-neutral-700/60 text-zinc-100",
-    badgeBg: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-    colors: ["#262626", "#09090b", "#d4d4d8"],
+      "bg-gradient-to-br from-amber-500 via-orange-600 to-stone-900 border-amber-400/50 text-white shadow-lg shadow-amber-950/50",
+    badgeBg: "bg-amber-400/20 text-amber-200 border-amber-300/40 font-bold",
+    colors: ["#f59e0b", "#ea580c", "#fef3c7"],
   },
   {
-    name: "藍鈦",
+    name: "薄荷翡翠",
     cardBg:
-      "bg-gradient-to-br from-slate-900 via-indigo-950 to-zinc-900 border-indigo-500/40 text-indigo-100",
-    badgeBg: "bg-sky-500/20 text-sky-300 border-sky-500/30",
-    colors: ["#0f172a", "#1e1b4b", "#bae6fd"],
+      "bg-gradient-to-br from-emerald-500 via-teal-700 to-slate-900 border-emerald-400/50 text-white shadow-lg shadow-emerald-950/50",
+    badgeBg: "bg-emerald-400/20 text-emerald-200 border-emerald-300/40 font-bold",
+    colors: ["#10b981", "#0d9488", "#d1fae5"],
   },
   {
-    name: "白銀鈦",
+    name: "熾焰珊瑚",
     cardBg:
-      "bg-gradient-to-br from-slate-600 via-slate-700 to-zinc-800 border-slate-400/50 text-slate-100",
-    badgeBg: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-    colors: ["#475569", "#334155", "#a7f3d0"],
+      "bg-gradient-to-br from-rose-500 via-pink-700 to-slate-900 border-rose-400/50 text-white shadow-lg shadow-rose-950/50",
+    badgeBg: "bg-rose-400/20 text-rose-200 border-rose-300/40 font-bold",
+    colors: ["#f43f5e", "#db2777", "#ffe4e6"],
   },
 ];
 const money = (value) =>
@@ -482,7 +482,10 @@ export default function FinPulseDashboard() {
   );
 
   return (
-    <div className="app-shell">
+    <div className="app-shell min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950/60 to-slate-900 text-slate-100 relative overflow-hidden">
+      <div className="glow-orb orb-1" />
+      <div className="glow-orb orb-2" />
+      <div className="glow-orb orb-3" />
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">
@@ -818,8 +821,19 @@ function Overview({ stats, urgent, pieData, barData, markPaid }) {
   );
 }
 function Kpi({ icon: Icon, label, value, meta, tone, progress }) {
+  const toneClasses = {
+    cyan:
+      "bg-gradient-to-br from-cyan-500/15 via-blue-600/10 to-transparent border-cyan-400/40 shadow-[0_0_20px_rgba(34,211,238,0.15)] text-cyan-300",
+    rose:
+      "bg-gradient-to-br from-rose-500/15 via-pink-600/10 to-transparent border-rose-400/40 shadow-[0_0_20px_rgba(251,113,133,0.15)] text-rose-300",
+    amber:
+      "bg-gradient-to-br from-amber-500/15 via-orange-600/10 to-transparent border-amber-400/40 shadow-[0_0_20px_rgba(251,191,36,0.15)] text-amber-300",
+    emerald:
+      "bg-gradient-to-br from-emerald-500/15 via-teal-600/10 to-transparent border-emerald-400/40 shadow-[0_0_20px_rgba(52,211,153,0.15)] text-emerald-300",
+  };
+
   return (
-    <Glass className={`kpi ${tone}`}>
+    <Glass className={`kpi ${tone} ${toneClasses[tone] || ""}`}>
       <div className="kpi-top">
         <span>{label}</span>
         <Icon size={17} />
@@ -828,7 +842,10 @@ function Kpi({ icon: Icon, label, value, meta, tone, progress }) {
       <small>{meta}</small>
       {progress !== undefined && (
         <div className="progress">
-          <i style={{ width: `${progress}%` }} />
+          <i
+            className="bg-gradient-to-r from-emerald-400 to-cyan-400"
+            style={{ width: `${progress}%` }}
+          />
         </div>
       )}
     </Glass>
