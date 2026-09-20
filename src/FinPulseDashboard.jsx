@@ -247,8 +247,11 @@ export default function FinPulseDashboard() {
   useEffect(() => {
     let stopCards = () => {},
       stopTransactions = () => {};
+    let authVersion = 0;
 
     const stopAuth = onAuthStateChanged(auth, (nextUser) => {
+      authVersion += 1;
+      const currentAuthVersion = authVersion;
       stopCards();
       stopTransactions();
       stopCards = () => {};
@@ -261,27 +264,98 @@ export default function FinPulseDashboard() {
         return;
       }
 
-      setCloud("connected");
-      stopCards = onSnapshot(
-        collection(db, "users", nextUser.uid, "cards"),
-        (snapshot) => {
-          writeLocal(
-            snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-            null,
+      const bindCloudData = () => {
+        if (currentAuthVersion !== authVersion) return;
+        setCloud("connected");
+        stopCards = onSnapshot(
+          collection(db, "users", nextUser.uid, "cards"),
+          (snapshot) => {
+            writeLocal(
+              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+              null,
+            );
+          },
+          () => setCloud("local"),
+        );
+        stopTransactions = onSnapshot(
+          collection(db, "users", nextUser.uid, "transactions"),
+          (snapshot) => {
+            writeLocal(
+              null,
+              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+            );
+          },
+          () => setCloud("local"),
+        );
+      };
+
+      const syncLocalPreview = async () => {
+        const localCards = fromStorage(STORAGE_KEY_CARDS);
+        const localTransactions = fromStorage(STORAGE_KEY_TX);
+        if (!localCards.length && !localTransactions.length) {
+          bindCloudData();
+          return;
+        }
+
+        try {
+          const [cardSnapshot, transactionSnapshot] = await Promise.all([
+            getDocs(collection(db, "users", nextUser.uid, "cards")),
+            getDocs(collection(db, "users", nextUser.uid, "transactions")),
+          ]);
+          if (currentAuthVersion !== authVersion) return;
+
+          const cloudCards = cardSnapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }));
+          const cloudTransactions = transactionSnapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }));
+          const shouldMerge = window.confirm(
+            "是否將本機資料合併並上傳至雲端？",
           );
-        },
-        () => setCloud("local"),
-      );
-      stopTransactions = onSnapshot(
-        collection(db, "users", nextUser.uid, "transactions"),
-        (snapshot) => {
-          writeLocal(
-            null,
-            snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-          );
-        },
-        () => setCloud("local"),
-      );
+
+          if (shouldMerge) {
+            const cardsById = new Map(
+              cloudCards.map((card) => [card.id, card]),
+            );
+            localCards.forEach((card) => cardsById.set(card.id, card));
+            const mergedCards = [...cardsById.values()];
+            const seenTransactions = new Set(
+              cloudTransactions.map(transactionKey),
+            );
+            const mergedTransactions = [...cloudTransactions];
+            localTransactions.forEach((transaction) => {
+              const key = transactionKey(transaction);
+              if (!seenTransactions.has(key)) {
+                seenTransactions.add(key);
+                mergedTransactions.push(transaction);
+              }
+            });
+
+            const batch = writeBatch(db);
+            mergedCards.forEach((card) =>
+              batch.set(doc(db, "users", nextUser.uid, "cards", card.id), card),
+            );
+            mergedTransactions.forEach((transaction) =>
+              batch.set(
+                doc(db, "users", nextUser.uid, "transactions", transaction.id),
+                transaction,
+              ),
+            );
+            await batch.commit();
+            writeLocal(mergedCards, mergedTransactions);
+            setToast("本機資料已合併並上傳至雲端");
+          }
+          bindCloudData();
+        } catch {
+          setCloud("local");
+          bindCloudData();
+        }
+      };
+
+      syncLocalPreview();
     });
 
     return () => {
@@ -1218,10 +1292,10 @@ function TransactionsView({
             <table>
               <thead>
                 <tr>
-                  <th>日期</th>
-                  <th>說明</th>
-                  <th>信用卡</th>
-                  <th>分類</th>
+                  <th className="table-header">日期</th>
+                  <th className="table-header">說明</th>
+                  <th className="table-header">信用卡</th>
+                  <th className="table-header">分類</th>
                   <th className="align-right">金額</th>
                   <th />
                 </tr>
@@ -1262,7 +1336,7 @@ function TransactionsView({
                         ))}
                       </select>
                     </td>
-                    <td className="align-right amount">{money(tx.amount)}</td>
+                    <td className="align-right amount">{money(Math.abs(Number(tx.amount || 0)))}</td>
                     <td>
                       <button
                         className="icon-button"
