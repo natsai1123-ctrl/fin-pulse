@@ -66,6 +66,9 @@
 .card-actions { position: relative; z-index: 1; color: #e2e8f0; }
 .card-actions > span { font-weight: 600; }
 
+.ai-avatar img { width: 28px; height: 28px; object-fit: contain; }
+.message > span img { width: 18px; height: 18px; object-fit: contain; }
+
 /* Current vibrant titanium theme contrast */
 .credit-card { background: linear-gradient(135deg, var(--card-a), var(--card-b) 56%, var(--card-c)); box-shadow: 0 22px 35px rgba(2,6,23,.24), inset 0 1px 0 rgba(255,255,255,.3); }
 .credit-card[data-theme="極光幻藍"] .card-status { color: #cffafe; border-color: rgba(103,232,249,.55); background: rgba(8,145,178,.3); }

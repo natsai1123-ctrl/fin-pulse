@@ -42,6 +42,7 @@ import {
   YAxis,
 } from "recharts";
 import { db, auth, googleProvider } from "./firebase";
+import GeminiLogo from "./assets/Google_Gemini_logo_2025.svg";
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -1407,7 +1408,7 @@ function AiView({ cards, transactions }) {
       <Glass className="ai-main">
         <div className="ai-head">
           <div className="ai-avatar">
-            <Bot size={20} />
+            <img src={GeminiLogo} alt="Gemini" />
           </div>
           <div>
             <p className="eyebrow">FINPULSE INTELLIGENCE</p>
@@ -1424,7 +1425,13 @@ function AiView({ cards, transactions }) {
               className={`message ${message.from}`}
               key={`${message.from}-${index}`}
             >
-              <span>{message.from === "ai" ? <Bot size={14} /> : "你"}</span>
+              <span>
+                {message.from === "ai" ? (
+                  <img src={GeminiLogo} alt="Gemini" />
+                ) : (
+                  "你"
+                )}
+              </span>
               <p>{message.text}</p>
             </div>
           ))}
