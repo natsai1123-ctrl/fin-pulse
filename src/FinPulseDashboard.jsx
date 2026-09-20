@@ -17,6 +17,8 @@ import {
   Filter,
   Landmark,
   LayoutDashboard,
+  LogIn,
+  LogOut,
   MessageCircle,
   Plus,
   RefreshCcw,
@@ -39,8 +41,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { db, auth } from "./firebase";
-import { signInAnonymously } from "firebase/auth";
+import { db, auth, googleProvider } from "./firebase";
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from "firebase/auth";
 import {
   collection,
   deleteDoc,
@@ -140,11 +146,19 @@ const fromStorage = (key) => {
   }
 };
 const parseExcelDate = (value) => {
-  if (!value) return today();
+  if (value === null || value === undefined || value === "") return today();
   if (value instanceof Date && !Number.isNaN(value.getTime()))
     return value.toISOString().slice(0, 10);
-  if (typeof value === "number") {
-    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim())
+        ? Number(value.trim())
+        : null;
+  if (numericValue !== null) {
+    const date = new Date(
+      Math.round((numericValue - 25569) * 86400 * 1000),
+    );
     return Number.isNaN(date.getTime())
       ? today()
       : date.toISOString().slice(0, 10);
@@ -209,6 +223,7 @@ export default function FinPulseDashboard() {
     fromStorage(STORAGE_KEY_TX),
   );
   const [uid, setUid] = useState(null);
+  const [user, setUser] = useState(null);
   const [cloud, setCloud] = useState("local");
   const [syncing, setSyncing] = useState(false);
   const [editingCard, setEditingCard] = useState(null);
@@ -232,37 +247,67 @@ export default function FinPulseDashboard() {
   useEffect(() => {
     let stopCards = () => {},
       stopTransactions = () => {};
-    signInAnonymously(auth)
-      .then(({ user }) => {
-        setUid(user.uid);
-        setCloud("connected");
-        stopCards = onSnapshot(
-          collection(db, "users", user.uid, "cards"),
-          (snapshot) => {
-            writeLocal(
-              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-              null,
-            );
-          },
-          () => setCloud("local"),
-        );
-        stopTransactions = onSnapshot(
-          collection(db, "users", user.uid, "transactions"),
-          (snapshot) => {
-            writeLocal(
-              null,
-              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-            );
-          },
-          () => setCloud("local"),
-        );
-      })
-      .catch(() => setCloud("local"));
+
+    const stopAuth = onAuthStateChanged(auth, (nextUser) => {
+      stopCards();
+      stopTransactions();
+      stopCards = () => {};
+      stopTransactions = () => {};
+      setUser(nextUser);
+      setUid(nextUser?.uid || null);
+
+      if (!nextUser) {
+        setCloud("local");
+        return;
+      }
+
+      setCloud("connected");
+      stopCards = onSnapshot(
+        collection(db, "users", nextUser.uid, "cards"),
+        (snapshot) => {
+          writeLocal(
+            snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+            null,
+          );
+        },
+        () => setCloud("local"),
+      );
+      stopTransactions = onSnapshot(
+        collection(db, "users", nextUser.uid, "transactions"),
+        (snapshot) => {
+          writeLocal(
+            null,
+            snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+          );
+        },
+        () => setCloud("local"),
+      );
+    });
+
     return () => {
+      stopAuth();
       stopCards();
       stopTransactions();
     };
   }, []);
+  const loginWithGoogle = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+      setToast("Google 帳號登入成功");
+    } catch (error) {
+      if (error.code !== "auth/popup-closed-by-user") {
+        setToast("Google 登入失敗，請稍後再試");
+      }
+    }
+  };
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      setToast("已登出 Google 帳號");
+    } catch {
+      setToast("登出失敗，請稍後再試");
+    }
+  };
   const saveCollection = async (type, next) => {
     writeLocal(
       type === "cards" ? next : null,
@@ -497,6 +542,23 @@ export default function FinPulseDashboard() {
           </div>
         </div>
         <div className="header-actions">
+          {user ? (
+            <span className="account-status" title={user.email || user.uid}>
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" />
+              ) : (
+                <span className="account-avatar">
+                  {(user.displayName || user.email || "G").slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <span>{user.displayName || user.email || "Google 帳號"}</span>
+            </span>
+          ) : (
+            <Button variant="primary" onClick={loginWithGoogle}>
+              <LogIn size={15} />
+              使用 Google 帳號登入
+            </Button>
+          )}
           <span className={`sync-status ${cloud}`}>
             <span className="status-dot" />
             {syncing ? (
@@ -541,6 +603,12 @@ export default function FinPulseDashboard() {
             <Download size={15} />
             備份 JSON
           </Button>
+          {user && (
+            <Button onClick={logout}>
+              <LogOut size={15} />
+              登出
+            </Button>
+          )}
         </div>
       </header>
       <main className="container">
@@ -906,6 +974,7 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate }) {
       style={{
         "--card-a": theme.colors[0],
         "--card-b": theme.colors[1],
+        "--card-c": theme.colors[2],
         "--card-accent": style[2],
       }}
     >
