@@ -65,6 +65,7 @@
 .chip i { border: .5px solid rgba(113, 78, 10, .7); border-radius: 1px; }
 .card-actions { position: relative; z-index: 1; color: #e2e8f0; }
 .card-actions > span { font-weight: 600; }
+.ai-avatar img, .message > span img { filter: brightness(0) invert(1); }
 
 .ai-avatar img { width: 28px; height: 28px; object-fit: contain; }
 .message > span img { width: 18px; height: 18px; object-fit: contain; }
