@@ -249,6 +249,10 @@ export default function FinPulseDashboard() {
       stopTransactions = () => {};
     let authVersion = 0;
 
+    if (!auth || !db) {
+      return undefined;
+    }
+
     const stopAuth = onAuthStateChanged(auth, (nextUser) => {
       authVersion += 1;
       const currentAuthVersion = authVersion;
@@ -365,6 +369,10 @@ export default function FinPulseDashboard() {
     };
   }, []);
   const loginWithGoogle = async () => {
+    if (!auth) {
+      setToast("Firebase 尚未設定，現時使用本機模式");
+      return;
+    }
     try {
       await signInWithPopup(auth, googleProvider);
       setToast("Google 帳號登入成功");
@@ -375,6 +383,7 @@ export default function FinPulseDashboard() {
     }
   };
   const logout = async () => {
+    if (!auth) return;
     try {
       await signOut(auth);
       setToast("已登出 Google 帳號");
@@ -387,7 +396,7 @@ export default function FinPulseDashboard() {
       type === "cards" ? next : null,
       type === "transactions" ? next : null,
     );
-    if (!uid) return;
+    if (!uid || !db) return;
     setSyncing(true);
     try {
       const existing = await getDocs(collection(db, "users", uid, type));
@@ -412,7 +421,7 @@ export default function FinPulseDashboard() {
       type === "cards" ? list.filter((item) => item.id !== id) : null,
       type === "transactions" ? list.filter((item) => item.id !== id) : null,
     );
-    if (uid) {
+    if (uid && db) {
       try {
         await deleteDoc(doc(db, "users", uid, type, id));
       } catch {
@@ -423,7 +432,7 @@ export default function FinPulseDashboard() {
   const clearAllData = async () => {
     if (!window.confirm("確定清空所有資料嗎？")) return;
     writeLocal([], []);
-    if (!uid) {
+    if (!uid || !db) {
       setToast("資料已清空");
       return;
     }

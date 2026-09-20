@@ -1,5 +1,23 @@
 # React + Vite
 
+## Render Deployment
+
+Set these environment variables in Render before running the Vite build. Vite
+embeds `VITE_*` values at build time:
+
+```text
+VITE_FIREBASE_API_KEY
+VITE_FIREBASE_AUTH_DOMAIN
+VITE_FIREBASE_PROJECT_ID
+VITE_FIREBASE_STORAGE_BUCKET
+VITE_FIREBASE_MESSAGING_SENDER_ID
+VITE_FIREBASE_APP_ID
+VITE_FIREBASE_MEASUREMENT_ID
+```
+
+When these values are absent or invalid, the app intentionally falls back to
+LocalStorage preview mode instead of crashing during startup.
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:
