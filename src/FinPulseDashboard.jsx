@@ -23,10 +23,13 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  ShieldCheck,
   Trash2,
   Upload,
   Wallet,
   X,
+  XCircle,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Bar,
@@ -59,6 +62,9 @@ import {
 
 export const STORAGE_KEY_CARDS = "STORAGE_KEY_CARDS";
 export const STORAGE_KEY_TX = "STORAGE_KEY_TX";
+export const STORAGE_KEY_INCOME = "STORAGE_KEY_INCOME";
+export const STORAGE_KEY_LOANS = "STORAGE_KEY_LOANS";
+export const STORAGE_KEY_LOAN_MEMOS = "STORAGE_KEY_LOAN_MEMOS";
 const CATEGORIES = [
   "餐飲",
   "交通",
@@ -78,6 +84,17 @@ const BANKS = [
   "中銀香港",
   "建行亞洲",
   "其他銀行",
+];
+const LOAN_BANKS = [
+  ["滙豐銀行 HSBC", "滙豐銀行 HSBC"],
+  ["恆生銀行 Hang Seng", "恆生銀行 Hang Seng"],
+  ["渣打銀行 Standard Chartered", "渣打銀行 Standard Chartered"],
+  ["中國銀行（香港）BOC", "中國銀行（香港）BOC"],
+  ["星展銀行 DBS", "星展銀行 DBS"],
+  ["東亞銀行 BEA", "東亞銀行 BEA"],
+  ["花旗銀行 Citibank", "花旗銀行 Citibank"],
+  ["建行亞洲 CCB Asia", "建行亞洲 CCB Asia"],
+  ["其他銀行 Other", "其他銀行 Other"],
 ];
 const COLORS = [
   "#22d3ee",
@@ -138,6 +155,33 @@ const TITANIUM_THEMES = [
 ];
 const money = (value) =>
   `HK$${Math.abs(Number(value || 0)).toLocaleString("en-HK", { maximumFractionDigits: 2 })}`;
+const signedMoney = (value) =>
+  `${Number(value || 0) < 0 ? "-" : ""}${money(value)}`;
+const createId = (prefix) =>
+  `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const loanMetrics = (principal, payment, termMonths, rebate = 0) => {
+  const amount = Number(principal) || 0;
+  const monthlyPayment = Number(payment) || 0;
+  const months = Number(termMonths) || 0;
+  const cashReceived = amount + (Number(rebate) || 0);
+  const totalRepayment = monthlyPayment * months;
+  const interest = Math.max(0, totalRepayment - cashReceived);
+  if (!cashReceived || !monthlyPayment || !months || totalRepayment <= cashReceived) {
+    return { interest, apr: 0 };
+  }
+
+  let low = 0;
+  let high = 1;
+  for (let index = 0; index < 60; index += 1) {
+    const monthlyRate = (low + high) / 2;
+    const balance =
+      cashReceived * (1 + monthlyRate) ** months -
+      monthlyPayment * (((1 + monthlyRate) ** months - 1) / monthlyRate);
+    if (balance > 0) low = monthlyRate;
+    else high = monthlyRate;
+  }
+  return { interest, apr: ((1 + (low + high) / 2) ** 12 - 1) * 100 };
+};
 const today = () => new Date().toISOString().slice(0, 10);
 const fromStorage = (key) => {
   try {
@@ -223,6 +267,13 @@ export default function FinPulseDashboard() {
   const [transactions, setTransactions] = useState(() =>
     fromStorage(STORAGE_KEY_TX),
   );
+  const [incomes, setIncomes] = useState(() =>
+    fromStorage(STORAGE_KEY_INCOME),
+  );
+  const [loans, setLoans] = useState(() => fromStorage(STORAGE_KEY_LOANS));
+  const [loanMemos, setLoanMemos] = useState(() =>
+    fromStorage(STORAGE_KEY_LOAN_MEMOS),
+  );
   const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
   const [cloud, setCloud] = useState("local");
@@ -235,7 +286,7 @@ export default function FinPulseDashboard() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const uploadRef = useRef(null);
 
-  const writeLocal = (nextCards, nextTransactions) => {
+  const writeLocal = (nextCards, nextTransactions, nextIncomes = null) => {
     if (nextCards !== null) {
       setCards(nextCards);
       localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(nextCards));
@@ -244,10 +295,25 @@ export default function FinPulseDashboard() {
       setTransactions(nextTransactions);
       localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(nextTransactions));
     }
+    if (nextIncomes !== null) {
+      setIncomes(nextIncomes);
+      localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(nextIncomes));
+    }
+  };
+  const writeLoanData = (nextLoans, nextMemos) => {
+    if (nextLoans !== null) {
+      setLoans(nextLoans);
+      localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(nextLoans));
+    }
+    if (nextMemos !== null) {
+      setLoanMemos(nextMemos);
+      localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(nextMemos));
+    }
   };
   useEffect(() => {
     let stopCards = () => {},
-      stopTransactions = () => {};
+      stopTransactions = () => {},
+      stopIncomes = () => {};
     let authVersion = 0;
 
     if (!auth || !db) {
@@ -259,8 +325,10 @@ export default function FinPulseDashboard() {
       const currentAuthVersion = authVersion;
       stopCards();
       stopTransactions();
+      stopIncomes();
       stopCards = () => {};
       stopTransactions = () => {};
+      stopIncomes = () => {};
       setUser(nextUser);
       setUid(nextUser?.uid || null);
 
@@ -292,20 +360,33 @@ export default function FinPulseDashboard() {
           },
           () => setCloud("local"),
         );
+        stopIncomes = onSnapshot(
+          collection(db, "users", nextUser.uid, "incomes"),
+          (snapshot) => {
+            writeLocal(
+              null,
+              null,
+              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+            );
+          },
+          () => setCloud("local"),
+        );
       };
 
       const syncLocalPreview = async () => {
         const localCards = fromStorage(STORAGE_KEY_CARDS);
         const localTransactions = fromStorage(STORAGE_KEY_TX);
-        if (!localCards.length && !localTransactions.length) {
+        const localIncomes = fromStorage(STORAGE_KEY_INCOME);
+        if (!localCards.length && !localTransactions.length && !localIncomes.length) {
           bindCloudData();
           return;
         }
 
         try {
-          const [cardSnapshot, transactionSnapshot] = await Promise.all([
+          const [cardSnapshot, transactionSnapshot, incomeSnapshot] = await Promise.all([
             getDocs(collection(db, "users", nextUser.uid, "cards")),
             getDocs(collection(db, "users", nextUser.uid, "transactions")),
+            getDocs(collection(db, "users", nextUser.uid, "incomes")),
           ]);
           if (currentAuthVersion !== authVersion) return;
 
@@ -314,6 +395,10 @@ export default function FinPulseDashboard() {
             ...item.data(),
           }));
           const cloudTransactions = transactionSnapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data(),
+          }));
+          const cloudIncomes = incomeSnapshot.docs.map((item) => ({
             id: item.id,
             ...item.data(),
           }));
@@ -338,6 +423,11 @@ export default function FinPulseDashboard() {
                 mergedTransactions.push(transaction);
               }
             });
+            const incomesById = new Map(
+              cloudIncomes.map((income) => [income.id, income]),
+            );
+            localIncomes.forEach((income) => incomesById.set(income.id, income));
+            const mergedIncomes = [...incomesById.values()];
 
             const batch = writeBatch(db);
             mergedCards.forEach((card) =>
@@ -349,8 +439,14 @@ export default function FinPulseDashboard() {
                 transaction,
               ),
             );
+            mergedIncomes.forEach((income) =>
+              batch.set(
+                doc(db, "users", nextUser.uid, "incomes", income.id),
+                income,
+              ),
+            );
             await batch.commit();
-            writeLocal(mergedCards, mergedTransactions);
+            writeLocal(mergedCards, mergedTransactions, mergedIncomes);
             setToast("本機資料已合併並上傳至雲端");
           }
           bindCloudData();
@@ -367,6 +463,7 @@ export default function FinPulseDashboard() {
       stopAuth();
       stopCards();
       stopTransactions();
+      stopIncomes();
     };
   }, []);
   const loginWithGoogle = async () => {
@@ -396,6 +493,7 @@ export default function FinPulseDashboard() {
     writeLocal(
       type === "cards" ? next : null,
       type === "transactions" ? next : null,
+      type === "incomes" ? next : null,
     );
     if (!uid || !db) return;
     setSyncing(true);
@@ -417,10 +515,12 @@ export default function FinPulseDashboard() {
     setSyncing(false);
   };
   const removeItem = async (type, id) => {
-    const list = type === "cards" ? cards : transactions;
+    const list =
+      type === "cards" ? cards : type === "transactions" ? transactions : incomes;
     writeLocal(
       type === "cards" ? list.filter((item) => item.id !== id) : null,
       type === "transactions" ? list.filter((item) => item.id !== id) : null,
+      type === "incomes" ? list.filter((item) => item.id !== id) : null,
     );
     if (uid && db) {
       try {
@@ -432,7 +532,8 @@ export default function FinPulseDashboard() {
   };
   const clearAllData = async () => {
     if (!window.confirm("確定清空所有資料嗎？")) return;
-    writeLocal([], []);
+    writeLocal([], [], []);
+    writeLoanData([], []);
     if (!uid || !db) {
       setToast("資料已清空");
       return;
@@ -440,11 +541,12 @@ export default function FinPulseDashboard() {
     setSyncing(true);
     try {
       const batch = writeBatch(db);
-      const [cardSnapshot, txSnapshot] = await Promise.all([
+      const [cardSnapshot, txSnapshot, incomeSnapshot] = await Promise.all([
         getDocs(collection(db, "users", uid, "cards")),
         getDocs(collection(db, "users", uid, "transactions")),
+        getDocs(collection(db, "users", uid, "incomes")),
       ]);
-      [...cardSnapshot.docs, ...txSnapshot.docs].forEach((item) =>
+      [...cardSnapshot.docs, ...txSnapshot.docs, ...incomeSnapshot.docs].forEach((item) =>
         batch.delete(item.ref),
       );
       await batch.commit();
@@ -460,18 +562,85 @@ export default function FinPulseDashboard() {
 
   const stats = useMemo(() => {
     const pending = cards.filter((card) => !card.isPaid);
+    const totalIncome = incomes.reduce(
+      (sum, income) => sum + Number(income.amount || 0),
+      0,
+    );
+    const spent = transactions.reduce(
+      (sum, tx) => sum + Number(tx.amount || 0),
+      0,
+    );
+    const totalLoanPrincipal = loans.reduce(
+      (sum, loan) => sum + Number(loan.principal || 0),
+      0,
+    );
+    const monthlyLoanPayment = loans.reduce(
+      (sum, loan) => sum + Number(loan.monthlyPayment || 0),
+      0,
+    );
+    const totalLoanInterest = loans.reduce(
+      (sum, loan) => sum + Number(loan.interest || 0),
+      0,
+    );
     return {
       pending,
       due: pending.reduce((sum, card) => sum + Number(card.amount || 0), 0),
       paid: cards
         .filter((card) => card.isPaid)
         .reduce((sum, card) => sum + Number(card.amount || 0), 0),
-      spent: transactions.reduce((sum, tx) => sum + Number(tx.amount || 0), 0),
+      totalIncome,
+      spent,
+      netCashflow: totalIncome - spent,
+      totalLoanPrincipal,
+      monthlyLoanPayment,
+      totalLoanInterest,
+      loanCount: loans.length,
       rate: cards.length
         ? (cards.filter((card) => card.isPaid).length / cards.length) * 100
         : 0,
     };
-  }, [cards, transactions]);
+  }, [cards, incomes, loans, transactions]);
+  const healthStatus = useMemo(() => {
+    const income = stats.totalIncome;
+    const expense = stats.spent;
+    const repayment = stats.monthlyLoanPayment;
+    const hasData = income > 0 || expense > 0 || loans.length > 0;
+    const cashflowRate = income > 0 ? (income - expense) / income : 0;
+    const debtRate = income > 0 ? repayment / income : repayment > 0 ? 1 : 0;
+    let level = 1;
+
+    if (hasData && (!income || cashflowRate < -0.1 || debtRate > 0.6)) {
+      level = 4;
+    } else if (hasData && (cashflowRate < 0 || debtRate > 0.4)) {
+      level = 3;
+    } else if (hasData && (cashflowRate < 0.2 || debtRate > 0.25)) {
+      level = 2;
+    }
+
+    const levels = {
+      1: {
+        label: "健康 😊",
+        Icon: ShieldCheck,
+        description: "現金流穩定，還款負擔處於健康範圍。",
+      },
+      2: {
+        label: "中等 😌",
+        Icon: AlertCircle,
+        description: "現金流或還款負擔需要持續留意。",
+      },
+      3: {
+        label: "比較危險 ⚠️",
+        Icon: AlertTriangle,
+        description: "支出或還款負擔偏高，建議盡快調整。",
+      },
+      4: {
+        label: "危險 🚨",
+        Icon: XCircle,
+        description: "目前財務壓力很高，請優先檢視現金流。",
+      },
+    };
+    return { level, ...levels[level], cashflowRate, debtRate };
+  }, [loans.length, stats]);
   const urgent = useMemo(
     () =>
       [...stats.pending].sort((a, b) =>
@@ -490,6 +659,22 @@ export default function FinPulseDashboard() {
       })).filter((item) => item.value > 0),
     [transactions],
   );
+  const loanPieData = useMemo(() => {
+    const totals = new Map();
+    loans.forEach((loan) => {
+      const name = loan.bankName || "未指定銀行";
+      totals.set(name, (totals.get(name) || 0) + Number(loan.principal || 0));
+    });
+    const total = [...totals.values()].reduce((sum, value) => sum + value, 0);
+    return [...totals.entries()]
+      .map(([name, value], index) => ({
+        name,
+        value,
+        percent: total ? (value / total) * 100 : 0,
+        color: COLORS[index % COLORS.length],
+      }))
+      .filter((item) => item.value > 0);
+  }, [loans]);
   const barData = useMemo(
     () =>
       cards.map((card) => ({
@@ -593,13 +778,49 @@ export default function FinPulseDashboard() {
   const exportJson = () => {
     const link = document.createElement("a");
     link.href = URL.createObjectURL(
-      new Blob([JSON.stringify({ cards, transactions }, null, 2)], {
+      new Blob(
+        [JSON.stringify({ cards, transactions, incomes, loans, loanMemos }, null, 2)],
+        {
         type: "application/json",
-      }),
+        },
+      ),
     );
     link.download = `finpulse-${today()}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
+  };
+  const addIncome = async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const income = {
+      id: `income-${Date.now()}`,
+      date: form.get("incomeDate") || today(),
+      description: String(form.get("incomeDescription")).trim(),
+      bankAccount: String(form.get("bankAccount")).trim(),
+      amount: Number(form.get("incomeAmount")) || 0,
+    };
+    await saveCollection("incomes", [income, ...incomes]);
+    event.currentTarget.reset();
+    setToast("收入已加入");
+  };
+  const addLoan = (loan) => {
+    writeLoanData([...loans, loan], null);
+    setToast("借貸記錄已加入");
+  };
+  const removeLoan = (id) => {
+    writeLoanData(
+      loans.filter((loan) => loan.id !== id),
+      loanMemos.filter((memo) => memo.loanId !== id),
+    );
+    setToast("借貸記錄已刪除");
+  };
+  const addLoanMemo = (memo) => {
+    writeLoanData(null, [...loanMemos, memo]);
+    setToast("備忘錄已加入");
+  };
+  const removeLoanMemo = (id) => {
+    writeLoanData(null, loanMemos.filter((memo) => memo.id !== id));
+    setToast("備忘錄已刪除");
   };
   const filtered = transactions.filter(
     (tx) =>
@@ -609,6 +830,7 @@ export default function FinPulseDashboard() {
       (cardFilter === "all" || tx.cardId === cardFilter) &&
       (categoryFilter === "all" || tx.category === categoryFilter),
   );
+  const HealthIcon = healthStatus.Icon;
 
   return (
     <div className="app-shell min-h-screen bg-gradient-to-br from-slate-950 via-indigo-950/60 to-slate-900 text-slate-100 relative overflow-hidden">
@@ -665,7 +887,8 @@ export default function FinPulseDashboard() {
           </Button>
           <Button
             onClick={() => {
-              writeLocal(cards, transactions);
+              writeLocal(cards, transactions, incomes);
+              writeLoanData(loans, loanMemos);
               setToast("資料已儲存");
             }}
           >
@@ -704,6 +927,24 @@ export default function FinPulseDashboard() {
             </h1>
             <p className="subtle">清晰掌握每一筆流動，讓每個決定都更有底氣。</p>
           </div>
+          <div
+            className={`health-status health-level-${healthStatus.level}`}
+            role="status"
+            aria-live="polite"
+            aria-label={`財務健康狀況：${healthStatus.label.replace(/ 😊| 😌| ⚠️| 🚨/u, "")}`}
+          >
+            <HealthIcon size={21} aria-hidden="true" />
+            <span>
+              <small>財務健康狀況</small>
+              <strong>
+                {healthStatus.label.replace(/ (😊|😌|⚠️|🚨)$/u, "")}{" "}
+                <span aria-hidden="true">
+                  {healthStatus.label.match(/(😊|😌|⚠️|🚨)$/u)?.[0]}
+                </span>
+              </strong>
+              <em>{healthStatus.description}</em>
+            </span>
+          </div>
           <div className="heading-stat">
             <ArrowUpRight size={18} />
             <span>本月支出</span>
@@ -714,7 +955,8 @@ export default function FinPulseDashboard() {
           {[
             ["overview", LayoutDashboard, "數據總覽與分析"],
             ["cards", CreditCard, "信用卡管理"],
-            ["transactions", FileSpreadsheet, "簽賬明細"],
+            ["transactions", FileSpreadsheet, "收入與簽帳明細"],
+            ["loans", Landmark, "借貸記錄"],
             ["ai", Bot, "AI 理財小幫手"],
           ].map(([id, Icon, label]) => (
             <button
@@ -734,6 +976,7 @@ export default function FinPulseDashboard() {
             stats={stats}
             urgent={urgent}
             pieData={pieData}
+            loanPieData={loanPieData}
             barData={barData}
             markPaid={() =>
               urgent &&
@@ -782,6 +1025,11 @@ export default function FinPulseDashboard() {
           <TransactionsView
             cards={cards}
             transactions={filtered}
+            incomes={incomes}
+            incomeTotal={incomes.reduce(
+              (sum, income) => sum + Number(income.amount || 0),
+              0,
+            )}
             query={query}
             setQuery={setQuery}
             cardFilter={cardFilter}
@@ -790,6 +1038,8 @@ export default function FinPulseDashboard() {
             setCategoryFilter={setCategoryFilter}
             add={addTransaction}
             remove={(id) => removeItem("transactions", id)}
+            addIncome={addIncome}
+            removeIncome={(id) => removeItem("incomes", id)}
             updateCategory={(id, category) =>
               saveCollection(
                 "transactions",
@@ -806,6 +1056,16 @@ export default function FinPulseDashboard() {
                 ),
               )
             }
+          />
+        )}
+        {tab === "loans" && (
+          <LoansView
+            loans={loans}
+            loanMemos={loanMemos}
+            addLoan={addLoan}
+            removeLoan={removeLoan}
+            addLoanMemo={addLoanMemo}
+            removeLoanMemo={removeLoanMemo}
           />
         )}
         {tab === "ai" && <AiView cards={cards} transactions={transactions} />}
@@ -833,7 +1093,7 @@ export default function FinPulseDashboard() {
   );
 }
 
-function Overview({ stats, urgent, pieData, barData, markPaid }) {
+function Overview({ stats, urgent, pieData, loanPieData, barData, markPaid }) {
   return (
     <>
       <>
@@ -860,6 +1120,13 @@ function Overview({ stats, urgent, pieData, barData, markPaid }) {
       </>
       <div className="kpi-grid">
         <Kpi
+          icon={ArrowUpRight}
+          label="總收入"
+          value={money(stats.totalIncome)}
+          meta="全部收入記錄"
+          tone="emerald"
+        />
+        <Kpi
           icon={Wallet}
           label="本期待繳總金額"
           value={money(stats.due)}
@@ -868,10 +1135,17 @@ function Overview({ stats, urgent, pieData, barData, markPaid }) {
         />
         <Kpi
           icon={ArrowDownToLine}
-          label="本期總簽賬支出"
+          label="總支出"
           value={money(stats.spent)}
           meta="全部交易紀錄"
           tone="rose"
+        />
+        <Kpi
+          icon={ArrowUpRight}
+          label="淨現金流 / 結餘"
+          value={signedMoney(stats.netCashflow)}
+          meta={stats.netCashflow >= 0 ? "收入高於支出" : "支出高於收入"}
+          tone={stats.netCashflow >= 0 ? "emerald" : "rose"}
         />
         <Kpi
           icon={CreditCard}
@@ -888,8 +1162,68 @@ function Overview({ stats, urgent, pieData, barData, markPaid }) {
           tone="emerald"
           progress={stats.rate}
         />
+        <Kpi
+          icon={Landmark}
+          label="總貸款金額"
+          value={money(stats.totalLoanPrincipal)}
+          meta={`${stats.loanCount} 筆借貸記錄`}
+          tone="cyan"
+        />
+        <Kpi
+          icon={ArrowDownToLine}
+          label="每月總還款負擔"
+          value={money(stats.monthlyLoanPayment)}
+          meta="所有貸款每月還款"
+          tone="amber"
+        />
+        <Kpi
+          icon={Wallet}
+          label="全期總利息支出"
+          value={money(stats.totalLoanInterest)}
+          meta="按已記錄貸款估算"
+          tone="rose"
+        />
       </div>
       <div className="chart-grid">
+        <Glass className="chart-panel cashflow-panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">CASHFLOW BALANCE</p>
+              <h2>收入與支出對比</h2>
+            </div>
+            <span className="chart-note">收入 ／ 支出</span>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={[
+                {
+                  name: "總額",
+                  income: stats.totalIncome,
+                  expense: stats.spent,
+                },
+              ]}
+              barGap={12}
+            >
+              <CartesianGrid stroke="#1e293b" vertical={false} />
+              <XAxis dataKey="name" stroke="#64748b" tick={{ fontSize: 10 }} />
+              <YAxis stroke="#64748b" tick={{ fontSize: 10 }} />
+              <Tooltip content={<ChartTip />} />
+              <Legend />
+              <Bar
+                dataKey="income"
+                name="總收入"
+                fill="#34d399"
+                radius={[4, 4, 0, 0]}
+              />
+              <Bar
+                dataKey="expense"
+                name="總支出"
+                fill="#fb7185"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </Glass>
         <Glass className="chart-panel">
           <div className="section-title">
             <div>
@@ -928,6 +1262,47 @@ function Overview({ stats, urgent, pieData, barData, markPaid }) {
             </div>
           ) : (
             <Empty>新增簽賬後，這裡會顯示消費結構</Empty>
+          )}
+        </Glass>
+        <Glass className="chart-panel">
+          <div className="section-title">
+            <div>
+              <p className="eyebrow">LOAN MIX</p>
+              <h2>貸款本金分佈</h2>
+            </div>
+            <span className="chart-note">按銀行佔總貸款本金</span>
+          </div>
+          {loanPieData.length ? (
+            <div className="donut-wrap">
+              <ResponsiveContainer width="55%" height={230}>
+                <PieChart>
+                  <Pie
+                    data={loanPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={68}
+                    outerRadius={94}
+                    paddingAngle={3}
+                  >
+                    {loanPieData.map((item) => (
+                      <Cell key={item.name} fill={item.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<ChartTip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="legend-list">
+                {loanPieData.map((item) => (
+                  <div key={item.name}>
+                    <i style={{ background: item.color }} />
+                    {item.name}
+                    <b>{item.percent.toFixed(1)}%</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <Empty icon={Landmark}>尚無借貸記錄</Empty>
           )}
         </Glass>
         <Glass className="chart-panel">
@@ -1048,6 +1423,289 @@ function CardsView({ cards, open, edit, toggle, remove, updateDate }) {
     </div>
   );
 }
+
+function LoansView({
+  loans,
+  loanMemos,
+  addLoan,
+  removeLoan,
+  addLoanMemo,
+  removeLoanMemo,
+}) {
+  const [form, setForm] = useState({
+    bankName: "",
+    startDate: today(),
+    principal: "",
+    monthlyPayment: "",
+    rebate: "",
+    termMonths: "",
+  });
+  const [memoForm, setMemoForm] = useState({
+    loanId: loans[0]?.id || "",
+    text: "",
+  });
+  const idSequence = useRef(0);
+  const preview = loanMetrics(
+    form.principal,
+    form.monthlyPayment,
+    form.termMonths,
+    form.rebate,
+  );
+  const updateField = (name, value) =>
+    setForm((current) => ({ ...current, [name]: value }));
+
+  const submitLoan = (event) => {
+    event.preventDefault();
+    addLoan({
+      id: createId(`loan-${idSequence.current++}`),
+      bankName: form.bankName.trim(),
+      startDate: form.startDate,
+      principal: Number(form.principal),
+      monthlyPayment: Number(form.monthlyPayment),
+      rebate: Number(form.rebate) || 0,
+      termMonths: Number(form.termMonths),
+      interest: preview.interest,
+      apr: preview.apr,
+    });
+    setForm({
+      bankName: "",
+      startDate: today(),
+      principal: "",
+      monthlyPayment: "",
+      rebate: "",
+      termMonths: "",
+    });
+  };
+
+  const submitMemo = (event) => {
+    event.preventDefault();
+    if (!memoForm.loanId || !memoForm.text.trim()) return;
+    addLoanMemo({
+      id: createId(`loan-memo-${idSequence.current++}`),
+      loanId: memoForm.loanId,
+      text: memoForm.text.trim(),
+    });
+    setMemoForm((current) => ({ ...current, text: "" }));
+  };
+
+  return (
+    <div className="view-stack">
+      <div className="view-toolbar">
+        <div>
+          <p className="eyebrow">LOAN TRACKER</p>
+          <h2>
+            借貸記錄 <span className="count">{loans.length}</span>
+          </h2>
+        </div>
+        <span className="import-hint">
+          <Landmark size={16} />
+          利息與 APR 即時計算
+        </span>
+      </div>
+      <Glass className="loan-panel">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">LOAN SETUP</p>
+            <h2>新增貸款</h2>
+          </div>
+          <span className="chart-note">請輸入還款期數以計算 APR</span>
+        </div>
+        <form className="loan-form" onSubmit={submitLoan}>
+          <Field label="銀行名稱">
+            <select
+              value={form.bankName}
+              onChange={(event) => updateField("bankName", event.target.value)}
+              required
+            >
+              <option value="">選擇銀行</option>
+              {LOAN_BANKS.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="放款日期">
+            <input
+              type="date"
+              className="dark-date"
+              value={form.startDate}
+              onChange={(event) => updateField("startDate", event.target.value)}
+              required
+            />
+          </Field>
+          <Field label="貸款金額">
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.principal}
+              onChange={(event) => updateField("principal", event.target.value)}
+              required
+            />
+          </Field>
+          <Field label="每月還款金額">
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.monthlyPayment}
+              onChange={(event) =>
+                updateField("monthlyPayment", event.target.value)
+              }
+              required
+            />
+          </Field>
+          <Field label="還款期數（月）">
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={form.termMonths}
+              onChange={(event) => updateField("termMonths", event.target.value)}
+              required
+            />
+          </Field>
+          <Field label="回贈金額">
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.rebate}
+              onChange={(event) => updateField("rebate", event.target.value)}
+            />
+          </Field>
+          <div className="loan-calculation">
+            <span>全期利息<strong>{money(preview.interest)}</strong></span>
+            <span>實際年利率 APR<strong>{preview.apr.toFixed(2)}%</strong></span>
+          </div>
+          <Button variant="primary">
+            <Plus size={16} />
+            新增貸款
+          </Button>
+        </form>
+      </Glass>
+      <Glass className="loan-panel">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">LOAN PORTFOLIO</p>
+            <h2>貸款列表</h2>
+          </div>
+        </div>
+        {loans.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th className="table-header">銀行</th>
+                  <th className="table-header">放款日期</th>
+                  <th className="align-right">貸款金額</th>
+                  <th className="align-right">每月還款</th>
+                  <th className="align-right">回贈</th>
+                  <th className="align-right">全期利息</th>
+                  <th className="align-right">APR</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {loans.map((loan) => (
+                  <tr key={loan.id}>
+                    <td><strong>{loan.bankName}</strong></td>
+                    <td className="muted">{loan.startDate}</td>
+                    <td className="align-right">{money(loan.principal)}</td>
+                    <td className="align-right">{money(loan.monthlyPayment)}</td>
+                    <td className="align-right income-amount">{money(loan.rebate)}</td>
+                    <td className="align-right amount">{money(loan.interest)}</td>
+                    <td className="align-right loan-apr">{Number(loan.apr || 0).toFixed(2)}%</td>
+                    <td>
+                      <button
+                        className="icon-button"
+                        title="刪除貸款"
+                        onClick={() => removeLoan(loan.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty icon={Landmark}>新增貸款後，這裡會顯示貸款列表</Empty>
+        )}
+      </Glass>
+      <Glass className="loan-panel">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">LOAN NOTES</p>
+            <h2>貸款備忘錄</h2>
+          </div>
+        </div>
+        <form className="memo-form" onSubmit={submitMemo}>
+          <Field label="對應貸款">
+            <select
+              value={memoForm.loanId}
+              onChange={(event) =>
+                setMemoForm((current) => ({ ...current, loanId: event.target.value }))
+              }
+              required
+              disabled={!loans.length}
+            >
+              <option value="">選擇貸款</option>
+              {loans.map((loan) => (
+                <option key={loan.id} value={loan.id}>{loan.bankName}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="備註">
+            <textarea
+              value={memoForm.text}
+              onChange={(event) =>
+                setMemoForm((current) => ({ ...current, text: event.target.value }))
+              }
+              placeholder="輸入還款、文件或聯絡事項備註"
+              required
+            />
+          </Field>
+          <Button variant="success" disabled={!loans.length}>
+            <Plus size={16} />
+            新增備忘錄
+          </Button>
+        </form>
+        {loanMemos.length ? (
+          <div className="table-wrap memo-list">
+            <table>
+              <thead>
+                <tr>
+                  <th className="table-header">對應貸款</th>
+                  <th className="table-header">備註</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {loanMemos.map((memo) => (
+                  <tr key={memo.id}>
+                    <td><strong>{loans.find((loan) => loan.id === memo.loanId)?.bankName || "已刪除貸款"}</strong></td>
+                    <td className="memo-text">{memo.text}</td>
+                    <td>
+                      <button className="icon-button" title="刪除備忘錄" onClick={() => removeLoanMemo(memo.id)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty icon={FileSpreadsheet}>新增備忘錄後，這裡會顯示詳細事項</Empty>
+        )}
+      </Glass>
+    </div>
+  );
+}
+
 function CardTile({ card, theme, edit, toggle, remove, updateDate }) {
   const style = BANK_STYLES[card.bank] || BANK_STYLES.其他銀行;
   const dateRef = useRef(null);
@@ -1189,6 +1847,8 @@ function CardModal({ card, close, save }) {
 function TransactionsView({
   cards,
   transactions,
+  incomes,
+  incomeTotal,
   query,
   setQuery,
   cardFilter,
@@ -1197,6 +1857,8 @@ function TransactionsView({
   setCategoryFilter,
   add,
   remove,
+  addIncome,
+  removeIncome,
   updateCategory,
   updateCard,
 }) {
@@ -1206,7 +1868,7 @@ function TransactionsView({
         <div>
           <p className="eyebrow">CASHFLOW LEDGER</p>
           <h2>
-            簽賬明細 <span className="count">{transactions.length}</span>
+            收入與簽帳明細 <span className="count">{transactions.length}</span>
           </h2>
         </div>
         <span className="import-hint">
@@ -1214,6 +1876,89 @@ function TransactionsView({
           支援 .xlsx / .xls
         </span>
       </div>
+      <Glass className="income-panel">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">INCOME TRACKER</p>
+            <h2>手動收入記錄</h2>
+          </div>
+          <strong className="income-total">收入總額 {money(incomeTotal)}</strong>
+        </div>
+        <form className="income-form" onSubmit={addIncome}>
+          <Field label="日期">
+            <input
+              name="incomeDate"
+              type="date"
+              defaultValue={today()}
+              className="dark-date"
+              required
+            />
+          </Field>
+          <Field label="記明 / 說明">
+            <input
+              name="incomeDescription"
+              placeholder="例如：薪金、 freelance 收入"
+              required
+            />
+          </Field>
+          <Field label="銀行帳戶">
+            <select name="bankAccount" defaultValue={BANKS[0]}>
+              {BANKS.map((bank) => (
+                <option key={bank}>{bank}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="金額">
+            <input
+              name="incomeAmount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+            />
+          </Field>
+          <Button variant="success">
+            <Plus size={16} />
+            新增收入
+          </Button>
+        </form>
+        <div className="income-list">
+          {incomes.length ? (
+            <table>
+              <thead>
+                <tr>
+                  <th className="table-header">日期</th>
+                  <th className="table-header">記明 / 說明</th>
+                  <th className="table-header">銀行帳戶</th>
+                  <th className="align-right">金額</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {incomes.map((income) => (
+                  <tr key={income.id}>
+                    <td className="muted">{income.date?.slice(0, 10)}</td>
+                    <td><strong>{income.description}</strong></td>
+                    <td className="muted">{income.bankAccount}</td>
+                    <td className="align-right income-amount">{money(income.amount)}</td>
+                    <td>
+                      <button
+                        className="icon-button"
+                        title="刪除收入"
+                        onClick={() => removeIncome(income.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <Empty icon={Wallet}>新增收入後，這裡會顯示收入記錄</Empty>
+          )}
+        </div>
+      </Glass>
       <div className="transaction-layout">
         <Glass>
           <form className="tx-form" onSubmit={add}>
