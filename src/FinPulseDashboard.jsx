@@ -44,27 +44,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { db, auth, googleProvider } from "./firebase";
-import GeminiLogo from "./assets/Google_Gemini_logo_2025.svg";
-import {
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-} from "firebase/auth";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  onSnapshot,
-  writeBatch,
-} from "firebase/firestore";
 
 export const STORAGE_KEY_CARDS = "STORAGE_KEY_CARDS";
 export const STORAGE_KEY_TX = "STORAGE_KEY_TX";
 export const STORAGE_KEY_INCOME = "STORAGE_KEY_INCOME";
 export const STORAGE_KEY_LOANS = "STORAGE_KEY_LOANS";
 export const STORAGE_KEY_LOAN_MEMOS = "STORAGE_KEY_LOAN_MEMOS";
+
 const CATEGORIES = [
   "餐飲",
   "交通",
@@ -117,6 +103,7 @@ const BANK_STYLES = {
   建行亞洲: ["#1e1b4b", "#18181b", "#a5b4fc"],
   其他銀行: ["#44403c", "#27272a", "#d6d3d1"],
 };
+
 const TITANIUM_THEMES = [
   {
     name: "極光幻藍",
@@ -191,6 +178,7 @@ const fromStorage = (key) => {
     return [];
   }
 };
+
 const parseExcelDate = (value) => {
   if (value === null || value === undefined || value === "") return today();
   if (value instanceof Date && !Number.isNaN(value.getTime()))
@@ -214,6 +202,7 @@ const parseExcelDate = (value) => {
     ? String(value).trim()
     : parsed.toISOString().slice(0, 10);
 };
+
 const transactionKey = (item) =>
   [
     item.date,
@@ -275,7 +264,6 @@ export default function FinPulseDashboard() {
   const [loanMemos, setLoanMemos] = useState(() =>
     fromStorage(STORAGE_KEY_LOAN_MEMOS),
   );
-  const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
   const [cloud, setCloud] = useState("local");
   const [syncing, setSyncing] = useState(false);
@@ -286,6 +274,7 @@ export default function FinPulseDashboard() {
   const [cardFilter, setCardFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const uploadRef = useRef(null);
+
   const writeLocal = (nextCards, nextTransactions, nextIncomes = null) => {
     if (nextCards !== null) {
       setCards(nextCards);
@@ -311,201 +300,26 @@ export default function FinPulseDashboard() {
     }
   };
 
-  useEffect(() => {
-    let stopCards = () => {},
-      stopTransactions = () => {},
-      stopIncomes = () => {};
-    let authVersion = 0;
-    if (!auth || !db) {
-      return undefined;
-    }
-    const stopAuth = onAuthStateChanged(auth, (nextUser) => {
-      authVersion += 1;
-      const currentAuthVersion = authVersion;
-      stopCards();
-      stopTransactions();
-      stopIncomes();
-      stopCards = () => {};
-      stopTransactions = () => {};
-      stopIncomes = () => {};
-      setUser(nextUser);
-      setUid(nextUser?.uid || null);
-      if (!nextUser) {
-        setCloud("local");
-        return;
-      }
-      const bindCloudData = () => {
-        if (currentAuthVersion !== authVersion) return;
-        setCloud("connected");
-        stopCards = onSnapshot(
-          collection(db, "users", nextUser.uid, "cards"),
-          (snapshot) => {
-            writeLocal(
-              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-              null,
-            );
-          },
-          () => setCloud("local"),
-        );
-        stopTransactions = onSnapshot(
-          collection(db, "users", nextUser.uid, "transactions"),
-          (snapshot) => {
-            writeLocal(
-              null,
-              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-            );
-          },
-          () => setCloud("local"),
-        );
-        stopIncomes = onSnapshot(
-          collection(db, "users", nextUser.uid, "incomes"),
-          (snapshot) => {
-            writeLocal(
-              null,
-              null,
-              snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
-            );
-          },
-          () => setCloud("local"),
-        );
-      };
-      const syncLocalPreview = async () => {
-        const localCards = fromStorage(STORAGE_KEY_CARDS);
-        const localTransactions = fromStorage(STORAGE_KEY_TX);
-        const localIncomes = fromStorage(STORAGE_KEY_INCOME);
-        if (!localCards.length && !localTransactions.length && !localIncomes.length) {
-          bindCloudData();
-          return;
-        }
-        try {
-          const [cardSnapshot, transactionSnapshot, incomeSnapshot] = await Promise.all([
-            getDocs(collection(db, "users", nextUser.uid, "cards")),
-            getDocs(collection(db, "users", nextUser.uid, "transactions")),
-            getDocs(collection(db, "users", nextUser.uid, "incomes")),
-          ]);
-          if (currentAuthVersion !== authVersion) return;
-          const cloudCards = cardSnapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data(),
-          }));
-          const cloudTransactions = transactionSnapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data(),
-          }));
-          const cloudIncomes = incomeSnapshot.docs.map((item) => ({
-            id: item.id,
-            ...item.data(),
-          }));
-          const shouldMerge = window.confirm(
-            "是否將本機資料合併並上傳至雲端？",
-          );
-          if (shouldMerge) {
-            const cardsById = new Map(
-              cloudCards.map((card) => [card.id, card]),
-            );
-            localCards.forEach((card) => cardsById.set(card.id, card));
-            const mergedCards = [...cardsById.values()];
-            const seenTransactions = new Set(
-              cloudTransactions.map(transactionKey),
-            );
-            const mergedTransactions = [...cloudTransactions];
-            localTransactions.forEach((transaction) => {
-              const key = transactionKey(transaction);
-              if (!seenTransactions.has(key)) {
-                seenTransactions.add(key);
-                mergedTransactions.push(transaction);
-              }
-            });
-            const incomesById = new Map(
-              cloudIncomes.map((income) => [income.id, income]),
-            );
-            localIncomes.forEach((income) => incomesById.set(income.id, income));
-            const mergedIncomes = [...incomesById.values()];
-            const batch = writeBatch(db);
-            mergedCards.forEach((card) =>
-              batch.set(doc(db, "users", nextUser.uid, "cards", card.id), card),
-            );
-            mergedTransactions.forEach((transaction) =>
-              batch.set(
-                doc(db, "users", nextUser.uid, "transactions", transaction.id),
-                transaction,
-              ),
-            );
-            mergedIncomes.forEach((income) =>
-              batch.set(
-                doc(db, "users", nextUser.uid, "incomes", income.id),
-                income,
-              ),
-            );
-            await batch.commit();
-            writeLocal(mergedCards, mergedTransactions, mergedIncomes);
-            setToast("本機資料已合併並上傳至雲端");
-          }
-          bindCloudData();
-        } catch {
-          setCloud("local");
-          bindCloudData();
-        }
-      };
-      syncLocalPreview();
-    });
-    return () => {
-      stopAuth();
-      stopCards();
-      stopTransactions();
-      stopIncomes();
-    };
-  }, []);
+  const loginWithGoogle = () => {
+    setUser({ displayName: "示範使用者", email: "demo@finpulse.local" });
+    setCloud("connected");
+    setToast("已切換至雲端協作模擬模式");
+  };
+  const logout = () => {
+    setUser(null);
+    setCloud("local");
+    setToast("已登出帳號");
+  };
 
-  const loginWithGoogle = async () => {
-    if (!auth) {
-      setToast("Firebase 尚未設定，現時使用本機模式");
-      return;
-    }
-    try {
-      await signInWithPopup(auth, googleProvider);
-      setToast("Google 帳號登入成功");
-    } catch (error) {
-      if (error.code !== "auth/popup-closed-by-user") {
-        setToast("Google 登入失敗，請稍後再試");
-      }
-    }
-  };
-  const logout = async () => {
-    if (!auth) return;
-    try {
-      await signOut(auth);
-      setToast("已登出 Google 帳號");
-    } catch {
-      setToast("登出失敗，請稍後再試");
-    }
-  };
-  const saveCollection = async (type, next) => {
+  const saveCollection = (type, next) => {
     writeLocal(
       type === "cards" ? next : null,
       type === "transactions" ? next : null,
       type === "incomes" ? next : null,
     );
-    if (!uid || !db) return;
-    setSyncing(true);
-    try {
-      const existing = await getDocs(collection(db, "users", uid, type));
-      const nextIds = new Set(next.map((item) => item.id));
-      const batch = writeBatch(db);
-      existing.docs.forEach((item) => {
-        if (!nextIds.has(item.id)) batch.delete(item.ref);
-      });
-      next.forEach((item) =>
-        batch.set(doc(db, "users", uid, type, item.id), item),
-      );
-      await batch.commit();
-      setCloud("connected");
-    } catch {
-      setCloud("local");
-    }
-    setSyncing(false);
+    setToast("變動已儲存");
   };
-  const removeItem = async (type, id) => {
+  const removeItem = (type, id) => {
     const list =
       type === "cards" ? cards : type === "transactions" ? transactions : incomes;
     writeLocal(
@@ -513,42 +327,12 @@ export default function FinPulseDashboard() {
       type === "transactions" ? list.filter((item) => item.id !== id) : null,
       type === "incomes" ? list.filter((item) => item.id !== id) : null,
     );
-    if (uid && db) {
-      try {
-        await deleteDoc(doc(db, "users", uid, type, id));
-      } catch {
-        setCloud("local");
-      }
-    }
+    setToast("已刪除項目");
   };
-  const clearAllData = async () => {
-    if (!window.confirm("確定清空所有資料嗎？")) return;
+  const clearAllData = () => {
     writeLocal([], [], []);
     writeLoanData([], []);
-    if (!uid || !db) {
-      setToast("資料已清空");
-      return;
-    }
-    setSyncing(true);
-    try {
-      const batch = writeBatch(db);
-      const [cardSnapshot, txSnapshot, incomeSnapshot] = await Promise.all([
-        getDocs(collection(db, "users", uid, "cards")),
-        getDocs(collection(db, "users", uid, "transactions")),
-        getDocs(collection(db, "users", uid, "incomes")),
-      ]);
-      [...cardSnapshot.docs, ...txSnapshot.docs, ...incomeSnapshot.docs].forEach((item) =>
-        batch.delete(item.ref),
-      );
-      await batch.commit();
-      setCloud("connected");
-      setToast("資料已清空");
-    } catch {
-      setCloud("local");
-      setToast("本機資料已清空，雲端同步失敗");
-    } finally {
-      setSyncing(false);
-    }
+    setToast("所有資料已清空");
   };
 
   const stats = useMemo(() => {
@@ -591,6 +375,7 @@ export default function FinPulseDashboard() {
         : 0,
     };
   }, [cards, incomes, loans, transactions]);
+
   const healthStatus = useMemo(() => {
     const income = stats.totalIncome;
     const expense = stats.spent;
@@ -630,6 +415,7 @@ export default function FinPulseDashboard() {
     };
     return { level, ...levels[level], cashflowRate, debtRate };
   }, [loans.length, stats]);
+
   const urgent = useMemo(
     () =>
       [...stats.pending].sort((a, b) =>
@@ -637,6 +423,7 @@ export default function FinPulseDashboard() {
       )[0],
     [stats.pending],
   );
+
   const pieData = useMemo(
     () =>
       CATEGORIES.map((name, index) => ({
@@ -648,6 +435,7 @@ export default function FinPulseDashboard() {
       })).filter((item) => item.value > 0),
     [transactions],
   );
+
   const loanPieData = useMemo(() => {
     const totals = new Map();
     loans.forEach((loan) => {
@@ -664,6 +452,7 @@ export default function FinPulseDashboard() {
       }))
       .filter((item) => item.value > 0);
   }, [loans]);
+
   const barData = useMemo(
     () =>
       cards.map((card) => ({
@@ -676,7 +465,7 @@ export default function FinPulseDashboard() {
     [cards, transactions],
   );
 
-  const saveCard = async (event) => {
+  const saveCard = (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const card = {
@@ -687,7 +476,7 @@ export default function FinPulseDashboard() {
       amount: Number(form.get("amount")) || 0,
       isPaid: editingCard?.isPaid || false,
     };
-    await saveCollection(
+    saveCollection(
       "cards",
       editingCard
         ? cards.map((item) => (item.id === card.id ? card : item))
@@ -695,9 +484,9 @@ export default function FinPulseDashboard() {
     );
     setModal(false);
     setEditingCard(null);
-    setToast("信用卡資料已儲存");
   };
-  const addTransaction = async (event) => {
+
+  const addTransaction = (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const item = {
@@ -705,13 +494,14 @@ export default function FinPulseDashboard() {
       description: String(form.get("description")).trim(),
       amount: Number(form.get("amount")) || 0,
       category: form.get("category"),
-      cardId: form.get("cardId") || "",
+      cardId: form.get("cardId"] || "",
       date: form.get("date") || today(),
     };
-    await saveCollection("transactions", [item, ...transactions]);
+    saveCollection("transactions", [item, ...transactions]);
     event.currentTarget.reset();
     setToast("簽賬已加入");
   };
+
   const importExcel = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -746,10 +536,7 @@ export default function FinPulseDashboard() {
             String(value(row, ["分類", "category"])).includes(category),
           ) || "其他",
       }));
-      const overwrite = window.confirm(
-        "按「確定」覆蓋現有交易，按「取消」追加至現有交易並自動去重。",
-      );
-      const base = overwrite ? [] : transactions;
+      const base = transactions;
       const seen = new Set(base.map(transactionKey));
       const uniqueImported = imported.filter((item) => {
         const key = transactionKey(item);
@@ -757,20 +544,21 @@ export default function FinPulseDashboard() {
         seen.add(key);
         return true;
       });
-      await saveCollection("transactions", [...uniqueImported, ...base]);
-      setToast(`已匯入 ${uniqueImported.length} 筆交易`);
+      saveCollection("transactions", [...uniqueImported, ...base]);
+      setToast(`已成功匯入 ${uniqueImported.length} 筆交易`);
     } catch {
       setToast("Excel 匯入失敗，請檢查檔案格式");
     }
     event.target.value = "";
   };
+
   const exportJson = () => {
     const link = document.createElement("a");
     link.href = URL.createObjectURL(
       new Blob(
         [JSON.stringify({ cards, transactions, incomes, loans, loanMemos }, null, 2)],
         {
-        type: "application/json",
+          type: "application/json",
         },
       ),
     );
@@ -778,7 +566,8 @@ export default function FinPulseDashboard() {
     link.click();
     URL.revokeObjectURL(link.href);
   };
-  const addIncome = async (event) => {
+
+  const addIncome = (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const income = {
@@ -788,10 +577,11 @@ export default function FinPulseDashboard() {
       bankAccount: String(form.get("bankAccount")).trim(),
       amount: Number(form.get("incomeAmount")) || 0,
     };
-    await saveCollection("incomes", [income, ...incomes]);
+    saveCollection("incomes", [income, ...incomes]);
     event.currentTarget.reset();
     setToast("收入已加入");
   };
+
   const addLoan = (loan) => {
     writeLoanData([...loans, loan], null);
     setToast("借貸記錄已加入");
@@ -811,6 +601,7 @@ export default function FinPulseDashboard() {
     writeLoanData(null, loanMemos.filter((memo) => memo.id !== id));
     setToast("備忘錄已刪除");
   };
+
   const filtered = transactions.filter(
     (tx) =>
       `${tx.description} ${cards.find((card) => card.id === tx.cardId)?.name || ""}`
@@ -819,6 +610,7 @@ export default function FinPulseDashboard() {
       (cardFilter === "all" || tx.cardId === cardFilter) &&
       (categoryFilter === "all" || tx.category === categoryFilter),
   );
+
   const HealthIcon = healthStatus.Icon;
 
   return (
@@ -839,19 +631,15 @@ export default function FinPulseDashboard() {
         <div className="header-actions">
           {user ? (
             <span className="account-status" title={user.email || user.uid}>
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="" />
-              ) : (
-                <span className="account-avatar">
-                  {(user.displayName || user.email || "G").slice(0, 1).toUpperCase()}
-                </span>
-              )}
-              <span>{user.displayName || user.email || "Google 帳號"}</span>
+              <span className="account-avatar">
+                {(user.displayName || "G").slice(0, 1).toUpperCase()}
+              </span>
+              <span>{user.displayName}</span>
             </span>
           ) : (
             <Button variant="primary" onClick={loginWithGoogle}>
               <LogIn size={15} />
-              使用 Google 帳號登入
+              登入 Google 協作模式
             </Button>
           )}
           <span className={`sync-status ${cloud}`}>
@@ -878,7 +666,7 @@ export default function FinPulseDashboard() {
             onClick={() => {
               writeLocal(cards, transactions, incomes);
               writeLoanData(loans, loanMemos);
-              setToast("資料已儲存");
+              setToast("資料已儲存至 LocalStorage");
             }}
           >
             <Database size={15} />
@@ -910,7 +698,7 @@ export default function FinPulseDashboard() {
       <main className="container">
         <div className="page-heading">
           <div>
-            <p className="eyebrow">SATURDAY, SEPTEMBER 19, 2026</p>
+            <p className="eyebrow">FINANCIAL OVERVIEW</p>
             <h1>
               你的財務脈搏<span className="cyan">.</span>
             </h1>
@@ -920,17 +708,12 @@ export default function FinPulseDashboard() {
             className={`health-status health-level-${healthStatus.level}`}
             role="status"
             aria-live="polite"
-            aria-label={`財務健康狀況：${healthStatus.label.replace(/ 😊| 😌| ⚠️| 🚨/u, "")}`}
+            aria-label={`財務健康狀況：${healthStatus.label}`}
           >
             <HealthIcon size={21} aria-hidden="true" />
             <span>
               <small>財務健康狀況</small>
-              <strong>
-                {healthStatus.label.replace(/ (😊|😌|⚠️|🚨)$/u, "")}{" "}
-                <span aria-hidden="true">
-                  {healthStatus.label.match(/(😊|😌|⚠️|🚨)$/u)?.[0]}
-                </span>
-              </strong>
+              <strong>{healthStatus.label}</strong>
               <em>{healthStatus.description}</em>
             </span>
           </div>
@@ -1344,6 +1127,7 @@ function Overview({ stats, urgent, pieData, loanPieData, barData, markPaid }) {
     </>
   );
 }
+
 function Kpi({ icon: Icon, label, value, meta, tone, progress }) {
   const toneClasses = {
     cyan:
@@ -1374,6 +1158,7 @@ function Kpi({ icon: Icon, label, value, meta, tone, progress }) {
     </Glass>
   );
 }
+
 function ChartTip({ active, payload }) {
   return active && payload?.length ? (
     <div className="chart-tooltip">
@@ -1420,16 +1205,15 @@ function CardsView({ cards, open, edit, toggle, remove, updateDate, updateAmount
     </div>
   );
 }
+
 function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount }) {
   const style = BANK_STYLES[card.bank] || BANK_STYLES.其他銀行;
   const dateRef = useRef(null);
   const [isEditingAmount, setIsEditingAmount] = useState(false);
   const [amountVal, setAmountVal] = useState(String(card.amount || 0));
-
   useEffect(() => {
     setAmountVal(String(card.amount || 0));
   }, [card.amount]);
-
   const handleSaveAmount = () => {
     const num = Number(amountVal);
     if (!isNaN(num)) {
@@ -1437,7 +1221,6 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount 
     }
     setIsEditingAmount(false);
   };
-
   return (
     <div
       className="credit-card"
@@ -1526,12 +1309,6 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount 
         </span>
         <div>
           <button
-            title="修改應還金額"
-            onClick={() => setIsEditingAmount(true)}
-          >
-            <Wallet size={14} />
-          </button>
-          <button
             title="修改到期日"
             onClick={() => dateRef.current?.showPicker?.()}
           >
@@ -1548,6 +1325,12 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount 
           </button>
           <button title="切換還款狀態" onClick={() => toggle(card)}>
             <Check size={14} />
+          </button>
+          <button
+            title="修改應還金額"
+            onClick={() => setIsEditingAmount(true)}
+          >
+            <Wallet size={14} />
           </button>
           <button title="刪除" onClick={() => remove(card.id)}>
             <Trash2 size={14} />
@@ -1896,6 +1679,7 @@ function CardModal({ card, close, save }) {
     </div>
   );
 }
+
 function TransactionsView({
   cards,
   transactions,
@@ -2205,7 +1989,7 @@ function AiView({ cards, transactions }) {
       <Glass className="ai-main">
         <div className="ai-head">
           <div className="ai-avatar">
-            <img src={GeminiLogo} alt="Gemini" />
+            <Bot size={20} className="text-cyan-400" />
           </div>
           <div>
             <p className="eyebrow">FINPULSE INTELLIGENCE</p>
@@ -2224,7 +2008,7 @@ function AiView({ cards, transactions }) {
             >
               <span>
                 {message.from === "ai" ? (
-                  <img src={GeminiLogo} alt="Gemini" />
+                  <Bot size={16} className="text-cyan-400" />
                 ) : (
                   "你"
                 )}
