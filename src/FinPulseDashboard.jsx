@@ -1423,6 +1423,21 @@ function CardsView({ cards, open, edit, toggle, remove, updateDate, updateAmount
 function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount }) {
   const style = BANK_STYLES[card.bank] || BANK_STYLES.其他銀行;
   const dateRef = useRef(null);
+  const [isEditingAmount, setIsEditingAmount] = useState(false);
+  const [amountVal, setAmountVal] = useState(String(card.amount || 0));
+
+  useEffect(() => {
+    setAmountVal(String(card.amount || 0));
+  }, [card.amount]);
+
+  const handleSaveAmount = () => {
+    const num = Number(amountVal);
+    if (!isNaN(num)) {
+      updateAmount(card.id, num);
+    }
+    setIsEditingAmount(false);
+  };
+
   return (
     <div
       className="credit-card"
@@ -1464,7 +1479,45 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount 
         </div>
         <div className="card-due">
           <small>應還金額</small>
-          <strong>{money(card.amount)}</strong>
+          {isEditingAmount ? (
+            <div className="flex items-center gap-1 mt-1">
+              <input
+                type="number"
+                step="0.01"
+                className="w-24 px-2 py-0.5 text-xs bg-slate-900/80 text-white rounded border border-cyan-400/50 focus:outline-none"
+                value={amountVal}
+                onChange={(e) => setAmountVal(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveAmount();
+                  if (e.key === "Escape") setIsEditingAmount(false);
+                }}
+              />
+              <button
+                className="p-1 text-emerald-400 hover:text-emerald-300"
+                onClick={handleSaveAmount}
+                title="儲存"
+              >
+                <Check size={14} />
+              </button>
+              <button
+                className="p-1 text-rose-400 hover:text-rose-300"
+                onClick={() => setIsEditingAmount(false)}
+                title="取消"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <strong
+              className="cursor-pointer hover:text-cyan-300 transition-colors flex items-center gap-1 group"
+              onClick={() => setIsEditingAmount(true)}
+              title="點擊修改金額"
+            >
+              {money(card.amount)}
+              <Edit3 size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+            </strong>
+          )}
         </div>
       </div>
       <div className="card-actions">
@@ -1474,15 +1527,7 @@ function CardTile({ card, theme, edit, toggle, remove, updateDate, updateAmount 
         <div>
           <button
             title="修改應還金額"
-            onClick={() => {
-              const val = prompt("請輸入新的應還金額：", card.amount);
-              if (val !== null) {
-                const num = Number(val);
-                if (!isNaN(num)) {
-                  updateAmount(card.id, num);
-                }
-              }
-            }}
+            onClick={() => setIsEditingAmount(true)}
           >
             <Wallet size={14} />
           </button>
