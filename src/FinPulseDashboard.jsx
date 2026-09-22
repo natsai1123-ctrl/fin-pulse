@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Archive,
   AlertCircle,
   ArrowDownToLine,
   ArrowUpRight,
@@ -810,6 +811,63 @@ export default function FinPulseDashboard() {
     URL.revokeObjectURL(link.href);
   };
 
+  const archiveCurrentMonth = async () => {
+    const currentYearMonth = new Date().toISOString().slice(0, 7);
+    const currentMonthTx = transactions.filter((tx) =>
+      tx.date?.startsWith(currentYearMonth),
+    );
+    const currentMonthIncome = incomes.filter((income) =>
+      income.date?.startsWith(currentYearMonth),
+    );
+
+    if (currentMonthTx.length === 0 && currentMonthIncome.length === 0) {
+      setToast(`找不到 ${currentYearMonth} 月份嘅數據可供封存`);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `確定要封存 ${currentYearMonth} 月份嘅數據？（將會匯出 JSON 封存檔）`,
+      )
+    ) {
+      return;
+    }
+
+    const archivePayload = {
+      archiveDate: today(),
+      yearMonth: currentYearMonth,
+      cards,
+      transactions: currentMonthTx,
+      incomes: currentMonthIncome,
+      loans,
+    };
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(
+      new Blob([JSON.stringify(archivePayload, null, 2)], {
+        type: "application/json",
+      }),
+    );
+    link.download = `finpulse-archive-${currentYearMonth}.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    const shouldClean = window.confirm(
+      "封存檔已下載！是否同時清空主介面上當月嘅簽賬同收入紀錄？",
+    );
+    if (shouldClean) {
+      await saveCollection(
+        "transactions",
+        transactions.filter((tx) => !tx.date?.startsWith(currentYearMonth)),
+      );
+      await saveCollection(
+        "incomes",
+        incomes.filter((income) => !income.date?.startsWith(currentYearMonth)),
+      );
+    }
+
+    setToast(`${currentYearMonth} 月份數據已完成封存！`);
+  };
+
   const addIncome = async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -936,6 +994,10 @@ export default function FinPulseDashboard() {
           <Button onClick={exportJson}>
             <Download size={15} />
             備份 JSON
+          </Button>
+          <Button onClick={archiveCurrentMonth}>
+            <Archive size={15} />
+            一按封存當月數據
           </Button>
           {user && (
             <Button onClick={logout}>
