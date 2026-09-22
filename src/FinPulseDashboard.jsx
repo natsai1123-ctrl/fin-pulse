@@ -22,7 +22,6 @@ import {
   LogOut,
   MessageCircle,
   Plus,
-  RefreshCcw,
   Search,
   ShieldCheck,
   Trash2,
@@ -545,36 +544,6 @@ export default function FinPulseDashboard() {
     }
   };
 
-  const clearAllData = async () => {
-    if (!window.confirm("確定清空所有資料嗎？")) return;
-    writeLocal([], [], []);
-    writeLoanData([], []);
-    if (!uid || !db) {
-      setToast("資料已清空");
-      return;
-    }
-    setSyncing(true);
-    try {
-      const batch = writeBatch(db);
-      const [cardSnapshot, txSnapshot, incomeSnapshot] = await Promise.all([
-        getDocs(collection(db, "users", uid, "cards")),
-        getDocs(collection(db, "users", uid, "transactions")),
-        getDocs(collection(db, "users", uid, "incomes")),
-      ]);
-      [...cardSnapshot.docs, ...txSnapshot.docs, ...incomeSnapshot.docs].forEach((item) =>
-        batch.delete(item.ref),
-      );
-      await batch.commit();
-      setCloud("connected");
-      setToast("資料已清空");
-    } catch {
-      setCloud("local");
-      setToast("本機資料已清空，雲端同步失敗");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   const stats = useMemo(() => {
     const pending = cards.filter((card) => !card.isPaid);
     const totalIncome = incomes.reduce(
@@ -812,34 +781,27 @@ export default function FinPulseDashboard() {
   };
 
   const archiveCurrentMonth = async () => {
-    const currentYearMonth = new Date().toISOString().slice(0, 7);
-    const currentMonthTx = transactions.filter((tx) =>
-      tx.date?.startsWith(currentYearMonth),
-    );
-    const currentMonthIncome = incomes.filter((income) =>
-      income.date?.startsWith(currentYearMonth),
-    );
-
-    if (currentMonthTx.length === 0 && currentMonthIncome.length === 0) {
-      setToast(`找不到 ${currentYearMonth} 月份嘅數據可供封存`);
+    const defaultYearMonth = new Date().toISOString().slice(0, 7);
+    const yearMonth = window.prompt(
+      "請輸入封存記錄月份（格式：YYYY-MM）",
+      defaultYearMonth,
+    )?.trim();
+    if (!yearMonth) {
       return;
     }
-
-    if (
-      !window.confirm(
-        `確定要封存 ${currentYearMonth} 月份嘅數據？（將會匯出 JSON 封存檔）`,
-      )
-    ) {
+    if (!/^\d{4}-\d{2}$/.test(yearMonth)) {
+      setToast("月份格式不正確，請使用 YYYY-MM");
       return;
     }
 
     const archivePayload = {
       archiveDate: today(),
-      yearMonth: currentYearMonth,
+      yearMonth,
       cards,
-      transactions: currentMonthTx,
-      incomes: currentMonthIncome,
+      transactions,
+      incomes,
       loans,
+      loanMemos,
     };
     const link = document.createElement("a");
     link.href = URL.createObjectURL(
@@ -847,25 +809,16 @@ export default function FinPulseDashboard() {
         type: "application/json",
       }),
     );
-    link.download = `finpulse-archive-${currentYearMonth}.json`;
+    link.download = `finpulse-archive-${yearMonth}.json`;
     link.click();
     URL.revokeObjectURL(link.href);
 
-    const shouldClean = window.confirm(
-      "封存檔已下載！是否同時清空主介面上當月嘅簽賬同收入紀錄？",
-    );
-    if (shouldClean) {
-      await saveCollection(
-        "transactions",
-        transactions.filter((tx) => !tx.date?.startsWith(currentYearMonth)),
-      );
-      await saveCollection(
-        "incomes",
-        incomes.filter((income) => !income.date?.startsWith(currentYearMonth)),
-      );
-    }
+    await saveCollection("cards", []);
+    await saveCollection("transactions", []);
+    await saveCollection("incomes", []);
+    writeLoanData([], []);
 
-    setToast(`${currentYearMonth} 月份數據已完成封存！`);
+    setToast(`${yearMonth} 月份數據已完成封存，主介面資料已清空！`);
   };
 
   const addIncome = async (event) => {
@@ -966,10 +919,6 @@ export default function FinPulseDashboard() {
               </>
             )}
           </span>
-          <Button onClick={clearAllData}>
-            <RefreshCcw size={15} />
-            清空資料
-          </Button>
           <Button
             onClick={() => {
               writeLocal(cards, transactions, incomes);
