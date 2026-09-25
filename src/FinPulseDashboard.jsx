@@ -171,8 +171,7 @@ const createId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
- * 🛠️ 核心金融修正：精確對應香港金管會(HKMA)淨現值法(NPV)標準的 JavaScript 實作
- * 完美繼承您所要求的：開頭淨現金流 = 本金 - 申請手續費 + 現金回贈 邏輯
+ * 🛠️ 核心金融修正：精確符合香港金管會(HKMA)與銀行公會淨現值法(IRR)標準
  */
 const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0) => {
   const amount = Number(principal) || 0;
@@ -181,7 +180,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
   const cashback = Number(rebate) || 0;
   const fee = Number(upfrontFee) || 0;
   
-  // 1. 計算第 0 期客戶實際拿到口袋裡的「淨現金流」
+  // 實際拿到口袋的淨款項 = 本金 - 申請手續費 + 現金回贈
   const netCashReceived = amount - fee + cashback;
   const totalRepayment = monthlyPayment * months;
   const interest = Math.max(0, totalRepayment - netCashReceived);
@@ -190,7 +189,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
     return { interest, apr: 0 };
   }
 
-  // 2. 透過二分法迭代逼近最真實的內部收益率 (等同於 Python 中的 npf.irr)
+  // 透過二分法迭代逼近最真實的內部收益率 (IRR)
   let low = -0.9999;
   let high = 1.0;
   
@@ -210,7 +209,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
 
   const monthlyRate = (low + high) / 2;
   
-  // 3. 根據法定複利年化公式計算實際年利率：APR = ((1 + 月利率)^12 - 1) * 100
+  // 依據複利公式年化：APR = (1 + 每月IRR)^12 - 1
   const apr = Number.isFinite((1 + monthlyRate) ** 12 - 1)
     ? ((1 + monthlyRate) ** 12 - 1) * 100
     : 0;
@@ -327,13 +326,49 @@ export default function FinPulseDashboard() {
   const [query, setQuery] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
 
-  // 完美整合新增的「申請手續費」狀態欄位
+  // 貸款狀態初始化（已內嵌 upfrontFee 申請手續費與預設 5000 元回贈）
   const [newLoan, setNewLoan] = useState({
     bank: LOAN_BANKS[0][0],
     principal: "",
     monthlyPayment: "",
     months: "60",
-    upfrontFee: "0",   // ⭐ 新增一欄：申請手續費 / 一次性手續費
-    rebate: "5000",    // 現金回贈
+    upfrontFee: "0", 
+    rebate: "5000",  
     date: today(),
   });
+
+  // ====== 這裡就是渲染新增貸款表單的 UI 區塊 ======
+  return (
+    <div className="p-4 md:p-6 text-slate-100 max-w-7xl mx-auto space-y-6">
+      {/* 這裡是您原本的導航或儀表板標題內容 (此處簡略，主要更新下方表單區塊) */}
+      
+      <div className="p-6 bg-slate-900/50 rounded-xl border border-slate-800/80 backdrop-blur-md">
+        <h3 className="text-lg font-bold text-white mb-4">新增貸款</h3>
+        
+        {/* 第一排網格輸入 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <Field label="銀行名稱">
+            <select
+              className="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5"
+              value={newLoan.bank}
+              onChange={(e) => setNewLoan({ ...newLoan, bank: e.target.value })}
+            >
+              {LOAN_BANKS.map(([label, val]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="放款日期">
+            <input
+              type="date"
+              className="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5"
+              value={newLoan.date}
+              onChange={(e) => setNewLoan({ ...newLoan, date: e.target.value })}
+            />
+          </Field>
+
+          <Field label="貸款金額 (本金)">
+            <input
+              type="number"
+              placeholder="請輸入貸款金額"
