@@ -101,23 +101,8 @@ const LOAN_BANKS = [
   ["其他銀行 Other", "其他銀行 Other"],
 ];
 
-const COLORS = [
-  "#22d3ee",
-  "#818cf8",
-  "#f59e0b",
-  "#fb7185",
-  "#c084fc",
-  "#34d399",
-  "#f97316",
-  "#a78bfa",
-  "#94a3b8",
-];
-
 const money = (value) =>
   `HK$${Math.abs(Number(value || 0)).toLocaleString("en-HK", { maximumFractionDigits: 2 })}`;
-
-const signedMoney = (value) =>
-  `${Number(value || 0) < 0 ? "-" : ""}${money(value)}`;
 
 const createId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -198,17 +183,6 @@ function Field({ label, children }) {
   );
 }
 
-function Chip() {
-  return (
-    <span className="chip">
-      <i />
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
 function Empty({ children, icon: Icon = Database }) {
   return (
     <div className="empty">
@@ -219,18 +193,9 @@ function Empty({ children, icon: Icon = Database }) {
 }
 
 export default function FinPulseDashboard() {
-  const [tab, setTab] = useState("loans");
-  const [cards, setCards] = useState(() => fromStorage(STORAGE_KEY_CARDS));
-  const [transactions, setTransactions] = useState(() => fromStorage(STORAGE_KEY_TX));
-  const [incomes, setIncomes] = useState(() => fromStorage(STORAGE_KEY_INCOME));
   const [loans, setLoans] = useState(() => fromStorage(STORAGE_KEY_LOANS));
-  const [loanMemos, setLoanMemos] = useState(() => fromStorage(STORAGE_KEY_LOAN_MEMOS));
-  const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
-  const [cloud, setCloud] = useState("local");
-  const [syncing, setSyncing] = useState(false);
 
-  // 貸款表單狀態初始化（含 upfrontFee 及 rebate）
   const [newLoan, setNewLoan] = useState({
     bank: LOAN_BANKS[0][0],
     principal: "",
