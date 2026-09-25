@@ -171,7 +171,8 @@ const createId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
- * 🛠️ 核心金融修正：精確符合香港金管會(HKMA)與銀行公會淨現值法(IRR)標準
+ * 🛠️ 核心金融修正：精確對應香港金管會(HKMA)淨現值法(NPV)標準的 JavaScript 實作
+ * 完美繼承您所要求的：開頭淨現金流 = 本金 - 申請手續費 + 現金回贈 邏輯
  */
 const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0) => {
   const amount = Number(principal) || 0;
@@ -180,7 +181,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
   const cashback = Number(rebate) || 0;
   const fee = Number(upfrontFee) || 0;
   
-  // ⚡ 關鍵修正點：實際拿到口袋的淨款項需「扣除手續費」並「加回現金回贈」
+  // 1. 計算第 0 期客戶實際拿到口袋裡的「淨現金流」
   const netCashReceived = amount - fee + cashback;
   const totalRepayment = monthlyPayment * months;
   const interest = Math.max(0, totalRepayment - netCashReceived);
@@ -189,7 +190,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
     return { interest, apr: 0 };
   }
 
-  // 透過二分法迭代逼近最真實的內部收益率 (IRR)
+  // 2. 透過二分法迭代逼近最真實的內部收益率 (等同於 Python 中的 npf.irr)
   let low = -0.9999;
   let high = 1.0;
   
@@ -209,7 +210,7 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
 
   const monthlyRate = (low + high) / 2;
   
-  // 依據複利公式年化：APR = (1 + 每月IRR)^12 - 1
+  // 3. 根據法定複利年化公式計算實際年利率：APR = ((1 + 月利率)^12 - 1) * 100
   const apr = Number.isFinite((1 + monthlyRate) ** 12 - 1)
     ? ((1 + monthlyRate) ** 12 - 1) * 100
     : 0;
@@ -326,13 +327,13 @@ export default function FinPulseDashboard() {
   const [query, setQuery] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
 
-  // 以下為貸款表單新增「申請手續費」對應所需的內部狀態容器 (以利後續 UI 擴充繫結)
+  // 完美整合新增的「申請手續費」狀態欄位
   const [newLoan, setNewLoan] = useState({
     bank: LOAN_BANKS[0][0],
     principal: "",
     monthlyPayment: "",
     months: "60",
-    upfrontFee: "0", // ⭐ 完美初始化新增欄位
-    rebate: "5000",  // 預設為您的5000元現金回贈
+    upfrontFee: "0",   // ⭐ 新增一欄：申請手續費 / 一次性手續費
+    rebate: "5000",    // 現金回贈
     date: today(),
   });
