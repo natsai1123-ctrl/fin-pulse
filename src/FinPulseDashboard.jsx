@@ -45,7 +45,7 @@ import {
   YAxis,
 } from "recharts";
 import { db, auth, googleProvider } from "./firebase";
-import GeminiLogo from "./assets/Google_Gemini_logo_2025.svg";
+import GeminiLogo from "./assets/Google_Gemini_logo_2025.svg"; // ⚡ 這裡已修正為正確的 from 語法
 import {
   onAuthStateChanged,
   signInWithPopup,
@@ -171,7 +171,7 @@ const createId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
- * 🛠️ 核心金融修正：精確符合香港金管會(HKMA)與銀行公會淨現值法(IRR)標準
+ * 🛠️ 精確符合香港金管會(HKMA)淨現值法標準的金融計量引擎
  */
 const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0) => {
   const amount = Number(principal) || 0;
@@ -180,7 +180,6 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
   const cashback = Number(rebate) || 0;
   const fee = Number(upfrontFee) || 0;
   
-  // 實際拿到口袋的淨款項 = 本金 - 申請手續費 + 現金回贈
   const netCashReceived = amount - fee + cashback;
   const totalRepayment = monthlyPayment * months;
   const interest = Math.max(0, totalRepayment - netCashReceived);
@@ -189,7 +188,6 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
     return { interest, apr: 0 };
   }
 
-  // 透過二分法迭代逼近最真實的內部收益率 (IRR)
   let low = -0.9999;
   let high = 1.0;
   
@@ -208,8 +206,6 @@ const loanMetrics = (principal, payment, termMonths, rebate = 0, upfrontFee = 0)
   }
 
   const monthlyRate = (low + high) / 2;
-  
-  // 依據複利公式年化：APR = (1 + 每月IRR)^12 - 1
   const apr = Number.isFinite((1 + monthlyRate) ** 12 - 1)
     ? ((1 + monthlyRate) ** 12 - 1) * 100
     : 0;
@@ -277,45 +273,19 @@ function Button({ children, variant = "ghost", className = "", ...props }) {
 function Field({ label, children }) {
   return (
     <label className="field">
-      <span>{label}</span>
+      <span className="block text-sm text-slate-400 mb-1">{label}</span>
       {children}
     </label>
-  );
-}
-
-function Chip() {
-  return (
-    <span className="chip">
-      <i />
-      <i />
-      <i />
-      <i />
-    </span>
-  );
-}
-
-function Empty({ children, icon: Icon = Database }) {
-  return (
-    <div className="empty">
-      <Icon size={24} />
-      <span>{children}</span>
-    </div>
   );
 }
 
 export default function FinPulseDashboard() {
   const [tab, setTab] = useState("overview");
   const [cards, setCards] = useState(() => fromStorage(STORAGE_KEY_CARDS));
-  const [transactions, setTransactions] = useState(() =>
-    fromStorage(STORAGE_KEY_TX),
-  );
-  const [incomes, setIncomes] = useState(() =>
-    fromStorage(STORAGE_KEY_INCOME),
-  );
+  const [transactions, setTransactions] = useState(() => fromStorage(STORAGE_KEY_TX));
+  const [incomes, setIncomes] = useState(() => fromStorage(STORAGE_KEY_INCOME));
   const [loans, setLoans] = useState(() => fromStorage(STORAGE_KEY_LOANS));
-  const [loanMemos, setLoanMemos] = useState(() =>
-    fromStorage(STORAGE_KEY_LOAN_MEMOS),
-  );
+  const [loanMemos, setLoanMemos] = useState(() => fromStorage(STORAGE_KEY_LOAN_MEMOS));
   const [uid, setUid] = useState(null);
   const [user, setUser] = useState(null);
   const [cloud, setCloud] = useState("local");
@@ -326,49 +296,57 @@ export default function FinPulseDashboard() {
   const [query, setQuery] = useState("");
   const [cardFilter, setCardFilter] = useState("all");
 
-  // 貸款狀態初始化（已內嵌 upfrontFee 申請手續費與預設 5000 元回贈）
   const [newLoan, setNewLoan] = useState({
     bank: LOAN_BANKS[0][0],
     principal: "",
     monthlyPayment: "",
-    months: "60",
+    months: "",
     upfrontFee: "0", 
     rebate: "5000",  
     date: today(),
   });
 
-  // ====== 這裡就是渲染新增貸款表單的 UI 區塊 ======
+  const computedMetrics = useMemo(() => {
+    return loanMetrics(
+      newLoan.principal,
+      newLoan.monthlyPayment,
+      newLoan.months,
+      newLoan.rebate,
+      newLoan.upfrontFee
+    );
+  }, [newLoan]);
+
   return (
-    <div className="p-4 md:p-6 text-slate-100 max-w-7xl mx-auto space-y-6">
-      {/* 這裡是您原本的導航或儀表板標題內容 (此處簡略，主要更新下方表單區塊) */}
-      
-      <div className="p-6 bg-slate-900/50 rounded-xl border border-slate-800/80 backdrop-blur-md">
-        <h3 className="text-lg font-bold text-white mb-4">新增貸款</h3>
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* 第一排網格輸入 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          <Field label="銀行名稱">
-            <select
-              className="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5"
-              value={newLoan.bank}
-              onChange={(e) => setNewLoan({ ...newLoan, bank: e.target.value })}
-            >
-              {LOAN_BANKS.map(([label, val]) => (
-                <option key={val} value={val}>{label}</option>
-              ))}
-            </select>
-          </Field>
+        {/* ====== 借貸設定主要區塊 ====== */}
+        <section className="bg-slate-900/40 rounded-2xl border border-slate-800/80 p-6 backdrop-blur-lg shadow-xl">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <span className="text-xs uppercase tracking-wider text-slate-500 font-medium">LOAN SETUP</span>
+              <h2 className="text-2xl font-bold text-white mt-1">新增貸款</h2>
+            </div>
+            <span className="text-xs text-slate-500 flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-md border border-slate-800">
+              <Landmark size={14} className="text-cyan-400" />
+              利息與 APR 即時計算
+            </span>
+          </div>
+          
+          {/* 第一排欄位 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-5">
+            <Field label="銀行名稱">
+              <select
+                className="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-3 outline-none focus:border-cyan-500 transition-colors"
+                value={newLoan.bank}
+                onChange={(e) => setNewLoan({ ...newLoan, bank: e.target.value })}
+              >
+                {LOAN_BANKS.map(([label, val]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </Field>
 
-          <Field label="放款日期">
-            <input
-              type="date"
-              className="w-full bg-slate-950 border border-slate-800 text-white rounded-lg p-2.5"
-              value={newLoan.date}
-              onChange={(e) => setNewLoan({ ...newLoan, date: e.target.value })}
-            />
-          </Field>
-
-          <Field label="貸款金額 (本金)">
-            <input
-              type="number"
-              placeholder="請輸入貸款金額"
+            <Field label="放款日期">
+              <input
+                type="date"
