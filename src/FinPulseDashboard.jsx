@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Archive,
+  CalendarDays,
   ChartPie as PieIcon,
   Cloud,
   CloudCheck,
@@ -7,6 +11,7 @@ import {
   Database,
   FileText,
   Landmark,
+  Layers,
   LayoutDashboard,
   LogIn,
   LogOut,
@@ -14,7 +19,11 @@ import {
   Plus,
   Receipt,
   Sparkles,
+  ShieldCheck,
+  Siren,
+  TriangleAlert,
   Trash2,
+  Zap,
   Wallet,
 } from "lucide-react";
 import { GoogleGenAI } from "@google/genai";
@@ -28,6 +37,7 @@ import {
   Cell,
   Line,
   LineChart,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -47,10 +57,12 @@ export const STORAGE_KEY_TX = "STORAGE_KEY_TX";
 export const STORAGE_KEY_INCOME = "STORAGE_KEY_INCOME";
 export const STORAGE_KEY_LOANS = "STORAGE_KEY_LOANS";
 export const STORAGE_KEY_LOAN_MEMOS = "STORAGE_KEY_LOAN_MEMOS";
+export const STORAGE_KEY_HISTORICAL_DATA = "finpulse_historical";
 
 const CATEGORIES = [
 "餐飲",
 "交通",
+"內地消費",
 "八達通增值",
 "購物",
 "網購",
@@ -85,13 +97,13 @@ const LOAN_BANKS = [
 
 const COLORS = [
 "#22d3ee",
-"#818cf8",
+"#34d399",
 "#f59e0b",
 "#fb7185",
-"#c084fc",
-"#34d399",
+"#38bdf8",
+"#a3e635",
 "#f97316",
-"#a78bfa",
+"#60a5fa",
 "#94a3b8",
 ];
 
@@ -99,22 +111,22 @@ const TITANIUM_THEMES = [
 {
 name: "極光幻藍",
 cardBg:
-"bg-gradient-to-br from-cyan-600 via-indigo-700 to-slate-900 border-cyan-400/50 text-white shadow-lg shadow-cyan-950/50",
+"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-cyan-400/30 text-white shadow-lg shadow-cyan-950/30 backdrop-blur-xl",
 },
 {
-name: "電光霓紫",
+name: "電光鈦藍",
 cardBg:
-"bg-gradient-to-br from-fuchsia-600 via-purple-700 to-slate-900 border-fuchsia-400/50 text-white shadow-lg shadow-fuchsia-950/50",
+"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-sky-400/30 text-white shadow-lg shadow-sky-950/30 backdrop-blur-xl",
 },
 {
 name: "耀光赤金",
 cardBg:
-"bg-gradient-to-br from-amber-500 via-orange-600 to-stone-900 border-amber-400/50 text-white shadow-lg shadow-amber-950/50",
+"bg-gradient-to-br from-stone-800 via-slate-900 to-slate-950 border-amber-400/30 text-white shadow-lg shadow-amber-950/30 backdrop-blur-xl",
 },
 {
 name: "薄荷翡翠",
 cardBg:
-"bg-gradient-to-br from-emerald-500 via-teal-700 to-slate-900 border-emerald-400/50 text-white shadow-lg shadow-emerald-950/50",
+"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-emerald-400/30 text-white shadow-lg shadow-emerald-950/30 backdrop-blur-xl",
 },
 ];
 
@@ -273,7 +285,7 @@ const fromStorage = (key) => {
 function Glass({ children, className = "" }) {
   return (
     <section
-      className={`bg-slate-900/70 backdrop-blur-md border border-slate-800 rounded-2xl shadow-xl ${className}`}
+      className={`min-w-0 rounded-xl border border-slate-300/25 bg-gradient-to-br from-slate-600/45 via-slate-800/75 to-slate-950/90 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition-all duration-300 hover:border-cyan-300/50 ${className}`}
     >
       {children}
     </section>
@@ -282,12 +294,16 @@ function Glass({ children, className = "" }) {
 
 function Button({ children, variant = "ghost", className = "", ...props }) {
   const baseStyle =
-    "px-4 py-2 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2 cursor-pointer";
+    "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 cursor-pointer";
   const variants = {
     primary:
       "bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20",
     secondary:
-      "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700",
+      "bg-gradient-to-b from-slate-600 to-slate-800 hover:from-slate-500 hover:to-slate-700 text-slate-100 border border-slate-400/30 shadow-md shadow-black/20",
+    archive:
+      "bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30",
+    complete:
+      "bg-emerald-500/10 text-emerald-300 border border-emerald-400/30 cursor-default",
     danger:
       "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30",
     ghost:
@@ -322,8 +338,21 @@ function Empty({ children, icon: Icon = Database }) {
   );
 }
 
-export default function FinPulseDashboard() {
+export default function FinPulseDashboard({ onArchiveSuccess = () => {} }) {
 const [tab, setTab] = useState("overview");
+const [archiveComplete, setArchiveComplete] = useState(false);
+const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+const [archiveMonth, setArchiveMonth] = useState("");
+const [archiveMonthError, setArchiveMonthError] = useState("");
+const [historicalData, setHistoricalData] = useState(() => {
+  const storedHistory = fromStorage(STORAGE_KEY_HISTORICAL_DATA);
+  return Array.isArray(storedHistory) ? storedHistory : [];
+});
+const [comparisonMode, setComparisonMode] = useState("month");
+const [comparisonMonth, setComparisonMonth] = useState(() => {
+  const currentDate = new Date();
+  return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
+});
 const [cards, setCards] = useState(() =>
 fromStorage(STORAGE_KEY_CARDS).map((card) => ({
   ...card,
@@ -632,6 +661,120 @@ const loanForecastSummary = useMemo(() => {
   };
 }, [averageMonthlyIncome, loanComparisonData, loanListWithMetrics]);
 
+const financialRisk = useMemo(() => {
+  const hasFinancialData = totalIncome > 0 || totalExpense > 0 || loans.length > 0;
+  const clamp = (value) => Math.min(100, Math.max(0, value));
+  const cashFlowScore = totalIncome > 0
+    ? clamp(50 + ((totalIncome - totalExpense) / totalIncome) * 100)
+    : 0;
+  const debtScore = averageMonthlyIncome > 0
+    ? clamp(100 - loanForecastSummary.debtToIncomeRatio)
+    : loanForecastSummary.totalMonthlyPayment > 0
+      ? 0
+      : 100;
+  const score = hasFinancialData
+    ? Math.round(cashFlowScore * 0.6 + debtScore * 0.4)
+    : 50;
+  const level = score >= 75
+    ? {
+        label: "健康",
+        description: "資金充裕、防禦力高，處於安全狀態。",
+        icon: ShieldCheck,
+        theme: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+      }
+    : score >= 50
+      ? {
+          label: "中等",
+          description: "需要注意流動性，有潛在風險。",
+          icon: TriangleAlert,
+          theme: "text-amber-400 bg-amber-500/10 border-amber-500/30",
+        }
+      : score >= 25
+        ? {
+            label: "危險",
+            description: "財務壓力大，資產開始出現警訊。",
+            icon: Zap,
+            theme: "text-orange-400 bg-orange-500/10 border-orange-500/30",
+          }
+        : {
+            label: "高危",
+            description: "極度危險，財務狀況隨時可能斷裂。",
+            icon: Siren,
+            theme: "text-rose-500 bg-rose-500/10 border-rose-500/30",
+            pulse: true,
+          };
+
+  return { score, hasFinancialData, ...level };
+}, [
+  averageMonthlyIncome,
+  loanForecastSummary.debtToIncomeRatio,
+  loanForecastSummary.totalMonthlyPayment,
+  loans.length,
+  totalExpense,
+  totalIncome,
+]);
+
+const comparisonPeriod = useMemo(() => {
+  const [selectedYear, selectedMonthNumber] = comparisonMonth.split("-").map(Number);
+  const previousMonthDate = new Date(selectedYear, selectedMonthNumber - 2, 1);
+  const previousMonth = `${previousMonthDate.getFullYear()}-${String(
+    previousMonthDate.getMonth() + 1
+  ).padStart(2, "0")}`;
+  const selectedYearLabel = String(selectedYear);
+  const previousYearLabel = String(selectedYear - 1);
+
+  const archivesFor = (period) => historicalData.filter((entry) =>
+    comparisonMode === "month"
+      ? entry.yearMonth === period
+      : entry.yearMonth?.startsWith(`${period}-`)
+  );
+  const summarize = (entries) => entries.reduce((totals, entry) => {
+    const income = Number(
+      entry.totalIncome ?? entry.summary?.totalIncome ??
+      entry.incomes?.reduce((sum, item) => sum + Number(item.amount || 0), 0) ?? 0
+    );
+    const expense = Number(
+      entry.totalExpense ?? entry.summary?.totalExpense ??
+      entry.transactions?.reduce((sum, item) => sum + Number(item.amount || 0), 0) ?? 0
+    );
+    const netCashflow = Number(
+      entry.netCashflow ?? entry.summary?.netCashflow ?? income - expense
+    );
+    return {
+      income: totals.income + (Number.isFinite(income) ? income : 0),
+      expense: totals.expense + (Number.isFinite(expense) ? expense : 0),
+      netCashflow: totals.netCashflow + (Number.isFinite(netCashflow) ? netCashflow : 0),
+    };
+  }, { income: 0, expense: 0, netCashflow: 0 });
+
+  const currentPeriod = comparisonMode === "month" ? comparisonMonth : selectedYearLabel;
+  const previousPeriod = comparisonMode === "month" ? previousMonth : previousYearLabel;
+  const currentArchives = archivesFor(currentPeriod);
+  const previousArchives = archivesFor(previousPeriod);
+
+  return {
+    currentPeriod,
+    previousPeriod,
+    current: summarize(currentArchives),
+    previous: summarize(previousArchives),
+    hasCurrent: currentArchives.length > 0,
+    hasPrevious: previousArchives.length > 0,
+    chartData: [
+      { metric: "總收入", previous: summarize(previousArchives).income, current: summarize(currentArchives).income },
+      { metric: "總支出", previous: summarize(previousArchives).expense, current: summarize(currentArchives).expense },
+      { metric: "淨現金流", previous: summarize(previousArchives).netCashflow, current: summarize(currentArchives).netCashflow },
+    ],
+  };
+}, [comparisonMode, comparisonMonth, historicalData]);
+
+const comparisonYears = useMemo(() => {
+  const years = new Set(historicalData.map((entry) => entry.yearMonth?.slice(0, 4)).filter(Boolean));
+  years.add(String(new Date().getFullYear()));
+  years.add(comparisonMonth.slice(0, 4));
+  years.add(String(Number(comparisonMonth.slice(0, 4)) - 1));
+  return Array.from(years).sort((a, b) => Number(b) - Number(a));
+}, [comparisonMonth, historicalData]);
+
 const fileInputRef = useRef(null);
 
 const exportWorkbook = () => {
@@ -651,6 +794,102 @@ const exportWorkbook = () => {
   });
 
   XLSX.writeFile(workbook, `finpulse-export-${today()}.xlsx`);
+};
+
+const archiveCurrentMonth = () => {
+  const yearMonth = archiveMonth.trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) {
+    setArchiveMonthError("請使用 YYYY-MM 格式，例如 2026-09。");
+    return;
+  }
+
+  const archive = {
+    yearMonth,
+    archivedAt: new Date().toISOString(),
+    totalIncome,
+    totalExpense,
+    netCashflow: totalIncome - totalExpense,
+    cards,
+    transactions,
+    incomes,
+    loans,
+    loanMemos,
+  };
+  const nextHistoricalData = [
+    ...historicalData.filter((entry) => entry.yearMonth !== yearMonth),
+    archive,
+  ].sort((left, right) => left.yearMonth.localeCompare(right.yearMonth));
+
+  try {
+    localStorage.setItem(
+      STORAGE_KEY_HISTORICAL_DATA,
+      JSON.stringify(nextHistoricalData)
+    );
+  } catch (error) {
+    console.error("Failed to persist archive history:", error);
+    setArchiveMonthError("無法保存歷史封存資料，請檢查瀏覽器儲存空間後重試。");
+    return;
+  }
+
+  const downloadUrl = URL.createObjectURL(
+    new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" })
+  );
+  const downloadLink = document.createElement("a");
+  downloadLink.href = downloadUrl;
+  downloadLink.download = `finpulse-archive-${yearMonth}.json`;
+  downloadLink.click();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+
+  try {
+    onArchiveSuccess(archive);
+  } catch (error) {
+    console.error("Archive success callback failed:", error);
+  }
+
+  setHistoricalData(nextHistoricalData);
+  setComparisonMonth(yearMonth);
+
+  const activeStorageKeys = [
+    STORAGE_KEY_CARDS,
+    STORAGE_KEY_TX,
+    STORAGE_KEY_INCOME,
+    STORAGE_KEY_LOAN_MEMOS,
+  ];
+  const originalValues = new Map(
+    activeStorageKeys.map((key) => [key, localStorage.getItem(key)])
+  );
+  try {
+    activeStorageKeys.forEach((key) => localStorage.setItem(key, JSON.stringify([])));
+  } catch (error) {
+    console.error("Failed to clear archived data from storage:", error);
+    originalValues.forEach((value, key) => {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (restoreError) {
+        console.error("Failed to restore data after archive clear error:", restoreError);
+      }
+    });
+    setArchiveMonthError("封存檔已下載並保存，但無法清空本機資料；請稍後重試。");
+    return;
+  }
+
+  setCards([]);
+  setTransactions([]);
+  setIncomes([]);
+  setLoanMemos([]);
+  setEditingTx(null);
+  setArchiveDialogOpen(false);
+  setArchiveComplete(true);
+};
+
+const openArchiveDialog = () => {
+  const currentDate = new Date();
+  setArchiveMonth(`${currentDate.getFullYear()}-${String(
+    currentDate.getMonth() + 1
+  ).padStart(2, "0")}`);
+  setArchiveMonthError("");
+  setArchiveDialogOpen(true);
 };
 
 const importWorkbook = async (event) => {
@@ -814,6 +1053,7 @@ const importWorkbook = async (event) => {
     const nextLoans = importedLoans.length ? importedLoans : loans;
     const nextMemos = importedMemos.length ? importedMemos : loanMemos;
 
+    setArchiveComplete(false);
     setCards(nextCards);
     setTransactions(nextTransactions);
     setIncomes(nextIncomes);
@@ -859,6 +1099,7 @@ paymentAmount: Number(newCard.paymentAmount) || 0,
 isPaid: false,
 };
 const next = [item, ...cards];
+setArchiveComplete(false);
 setCards(next);
 localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(next));
 setNewCard({ name: "", bank: BANKS[0], dueDate: today(), paymentAmount: "" });
@@ -936,6 +1177,7 @@ id: createId("tx"),
 amount: Number(newTx.amount) || 0,
 };
 const next = [item, ...transactions];
+setArchiveComplete(false);
 setTransactions(next);
 localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(next));
 setNewTx({
@@ -976,6 +1218,7 @@ id: createId("inc"),
 amount: Number(newIncome.amount) || 0,
 };
 const next = [item, ...incomes];
+setArchiveComplete(false);
 setIncomes(next);
 localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(next));
 setNewIncome({ source: "", amount: "", date: today() });
@@ -1002,6 +1245,7 @@ rebate: Number(newLoan.rebate) || 0,
 date: newLoan.date,
 });
 const next = [item, ...loansRef.current];
+setArchiveComplete(false);
 commitLoans(next);
 setNewLoan({
 bank: LOAN_BANKS[0][0],
@@ -1028,6 +1272,7 @@ e.preventDefault();
 if (!newMemo.trim()) return;
 const item = { id: createId("memo"), text: newMemo, date: today() };
 const next = [item, ...loanMemos];
+setArchiveComplete(false);
 setLoanMemos(next);
 localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 setNewMemo("");
@@ -1040,18 +1285,17 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.16),transparent_22%),radial-gradient(circle_at_bottom_right,_rgba(168,85,247,0.14),transparent_25%)]" />
+    <div className="relative isolate min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(148,163,184,0.2),_transparent_65%)] text-slate-100">
       {/* ====== 頂部 Header ====== */}
-      <header className="sticky top-0 z-20 border-b border-slate-800/80 bg-slate-950/80 px-6 py-5 shadow-[0_10px_30px_rgba(2,6,23,0.28)] backdrop-blur-xl md:flex md:items-center md:justify-between">
+      <header className="sticky top-0 z-20 border-b border-slate-500/25 bg-slate-900/80 px-5 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.3)] backdrop-blur-xl md:flex md:items-center md:justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 via-sky-500 to-indigo-600 text-lg font-black text-slate-950 shadow-lg shadow-cyan-500/20">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 via-sky-500 to-teal-600 text-base font-black text-slate-950 shadow-lg shadow-cyan-500/20">
               FP
             </div>
             <div>
-              <h1 className="text-2xl font-black tracking-tight text-white">FinPulse 金融脈搏</h1>
-              <p className="text-xs text-slate-400">
+              <h1 className="text-xl font-black tracking-tight text-white">FinPulse</h1>
+              <p className="text-[11px] text-slate-400">
                 個人資產、信用卡與貸款 HKMA APR 智能管理系統
               </p>
             </div>
@@ -1072,6 +1316,16 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
               </>
             )}
           </div>
+
+          <Button
+            variant={archiveComplete ? "complete" : "archive"}
+            onClick={openArchiveDialog}
+            disabled={archiveComplete}
+            className="whitespace-nowrap rounded-xl px-4 py-2 text-xs"
+          >
+            <Archive size={15} />
+            {archiveComplete ? "已成功封存" : "一按封存當月數據"}
+          </Button>
 
           <Button variant="secondary" onClick={exportWorkbook} className="text-xs">
             匯出 XLSX
@@ -1112,10 +1366,74 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       </div>
     </header>
 
+    {archiveDialogOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setArchiveDialogOpen(false);
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="archive-dialog-title"
+          className="w-full max-w-md rounded-2xl border border-slate-400/25 bg-gradient-to-br from-slate-700/95 via-slate-900/95 to-slate-950 p-6 shadow-2xl shadow-black/50 backdrop-blur-xl"
+        >
+          <h2 id="archive-dialog-title" className="text-lg font-bold text-white">
+            封存當月數據
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            確認封存月份。下載備份後，所有目前記錄將從主介面清空。
+          </p>
+          <form
+            className="mt-5 space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              archiveCurrentMonth();
+            }}
+          >
+            <label className="flex flex-col gap-2 text-sm text-slate-300">
+              <span className="text-xs font-medium text-slate-400">封存月份</span>
+              <input
+                autoFocus
+                type="month"
+                required
+                className="rounded-xl border border-slate-600 bg-slate-950 p-3 text-white outline-none focus:border-cyan-400 [color-scheme:dark]"
+                value={archiveMonth}
+                onChange={(event) => {
+                  setArchiveMonth(event.target.value);
+                  setArchiveMonthError("");
+                }}
+              />
+              {archiveMonthError && (
+                <span role="alert" className="text-xs text-rose-300">
+                  {archiveMonthError}
+                </span>
+              )}
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() => setArchiveDialogOpen(false)}
+              >
+                取消
+              </Button>
+              <Button variant="archive" type="submit">
+                <Archive size={15} /> 封存並清空
+              </Button>
+            </div>
+          </form>
+        </section>
+      </div>
+    )}
+
+    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
     {/* ====== 導航選單 ====== */}
-    <nav className="mx-auto flex w-full max-w-7xl items-center gap-2 overflow-x-auto border-b border-slate-800/80 px-4 pb-3 pt-4">
+    <nav className="flex w-full items-center gap-2 overflow-x-auto border-b border-slate-500/25 pb-3">
       {[
         { id: "overview", label: "財務總覽及報表", icon: LayoutDashboard },
+        { id: "comparison", label: "歷史跨期對決", icon: Layers },
         { id: "analysis", label: "貸款分析", icon: Landmark },
         { id: "cards", label: "信用卡", icon: CreditCard },
         { id: "transactions", label: "交易紀錄", icon: Receipt },
@@ -1126,10 +1444,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
         <button
           key={id}
           onClick={() => setTab(id)}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap cursor-pointer ${
+          className={`flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-all whitespace-nowrap cursor-pointer ${
             tab === id
-              ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-bold"
-              : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
+              ? "border-cyan-300/60 bg-gradient-to-b from-cyan-400/20 to-cyan-900/30 text-cyan-300 font-bold shadow-[0_0_18px_rgba(34,211,238,0.18),inset_0_1px_0_rgba(255,255,255,0.14)]"
+              : "border-slate-400/20 bg-gradient-to-b from-slate-600/70 to-slate-800/80 text-slate-300 shadow-md shadow-black/20 hover:border-slate-300/40 hover:from-slate-500/70 hover:text-white"
           }`}
         >
           <Icon size={16} />
@@ -1140,207 +1458,286 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
     {/* ====== Tab 1: 財務總覽 ====== */}
     {tab === "overview" && (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">
-              淨資產 / 淨結餘
-            </span>
-            <div className="text-2xl font-black text-cyan-400 mt-1">
-              {money(totalIncome - totalExpense)}
+      <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+                  <Glass className="min-h-28 p-4">
+                    <span className="text-xs font-medium text-slate-300">淨資產 / 淨結餘</span>
+                    <div className="mt-2 text-2xl font-black text-cyan-300">{money(totalIncome - totalExpense)}</div>
+                  </Glass>
+                  <Glass className="min-h-28 p-4">
+                    <span className="text-xs font-medium text-slate-300">總收入</span>
+                    <div className="mt-2 text-2xl font-black text-emerald-300">{money(totalIncome)}</div>
+                  </Glass>
+                  <Glass className="min-h-28 p-4">
+                    <span className="text-xs font-medium text-slate-300">總開支</span>
+                    <div className="mt-2 text-2xl font-black text-rose-300">{money(totalExpense)}</div>
+                  </Glass>
+                  <Glass className="min-h-28 p-4">
+                    <span className="text-xs font-medium text-slate-300">貸款總本金</span>
+                    <div className="mt-2 text-2xl font-black text-amber-300">{money(totalLoanPrincipal)}</div>
+                  </Glass>
+                  <div role="region" aria-label="財務風險評級" className={`min-h-28 rounded-xl border p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(0,0,0,0.38)] backdrop-blur-xl ${financialRisk.theme}`}>
+                    <span className="text-xs font-medium text-slate-200">財務風險評級</span>
+                    <div className="mt-2 flex items-center gap-3">
+                      <financialRisk.icon size={38} strokeWidth={2.2} />
+                      <span className={`text-2xl font-bold ${financialRisk.pulse ? "animate-pulse" : ""}`}>【{financialRisk.label}】</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-slate-200">{financialRisk.description}</p>
+                    {!financialRisk.hasFinancialData && <p className="mt-1 text-[11px] text-slate-400">尚未有足夠記錄，評級僅供參考。</p>}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[0.92fr_1.5fr]">
+                  <div className="space-y-4">
+                    <Glass className="p-4">
+                      <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-white"><PieIcon size={18} className="text-cyan-300" />開支類別分佈</h3>
+                      {categoryPieData.length === 0 ? <Empty>暫無交易資料以製作圖表</Empty> : (
+                        <div className="h-60">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie data={categoryPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={78} label>
+                                {categoryPieData.map((entry, index) => <Cell key={`cell-${entry.name}`} fill={COLORS[index % COLORS.length]} />)}
+                              </Pie>
+                              <Tooltip formatter={(value) => money(value)} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                    </Glass>
+
+                    <Glass className="p-4">
+                      <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-white"><Receipt size={18} className="text-cyan-300" />最新交易預覽</h3>
+                      {transactions.length === 0 ? <Empty>暫無交易紀錄</Empty> : (
+                        <div className="space-y-2">
+                          {transactions.slice(0, 5).map((tx) => (
+                            <div key={tx.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-300/20 bg-slate-950/45 px-3 py-2.5">
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-white">{tx.description}</div>
+                                <span className="text-xs text-slate-300">{tx.date} · {tx.category}</span>
+                              </div>
+                              <span className="shrink-0 text-sm font-bold text-rose-300">{money(tx.amount)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Glass>
+                  </div>
+
+                  <div className="space-y-4">
+                    <Glass className="p-4">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                        <h3 className="text-base font-bold text-white">月度收支趨勢</h3>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-300">
+                          <span>總收入 <strong className="text-emerald-300">{money(totalIncome)}</strong></span>
+                          <span>總開支 <strong className="text-rose-300">{money(totalExpense)}</strong></span>
+                          <span>月淨額 <strong className="text-cyan-300">{money(monthlyNetData[monthlyNetData.length - 1]?.net || 0)}</strong></span>
+                        </div>
+                      </div>
+                      <div className="h-60 min-w-0 overflow-hidden">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={monthlyNetData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
+                            <defs>
+                              <linearGradient id="incomeFill" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#34d399" stopOpacity={0.8} /><stop offset="95%" stopColor="#34d399" stopOpacity={0.05} /></linearGradient>
+                              <linearGradient id="expenseFill" x1="0" x2="0" y1="0" y2="1"><stop offset="5%" stopColor="#fb7185" stopOpacity={0.8} /><stop offset="95%" stopColor="#fb7185" stopOpacity={0.05} /></linearGradient>
+                            </defs>
+                            <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
+                            <XAxis dataKey="month" tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                            <YAxis tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                            <Tooltip formatter={(value) => money(value)} />
+                            <Area type="monotone" dataKey="income" stroke="#34d399" fill="url(#incomeFill)" strokeWidth={2} />
+                            <Area type="monotone" dataKey="expense" stroke="#fb7185" fill="url(#expenseFill)" strokeWidth={2} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </Glass>
+
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      <Glass className="p-4">
+                        <h3 className="mb-2 text-sm font-bold text-white">支出類別排行</h3>
+                        <div className="h-52">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={categoryBreakdownData} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
+                              <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
+                              <XAxis dataKey="name" tick={{ fill: "#cbd5e1", fontSize: 10 }} />
+                              <YAxis tick={{ fill: "#cbd5e1", fontSize: 10 }} />
+                              <Tooltip formatter={(value) => money(value)} />
+                              <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="#22d3ee" />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Glass>
+
+                      <Glass className="p-4">
+                        <h3 className="mb-2 text-sm font-bold text-white">貸款 APR 比較</h3>
+                        <div className="h-52">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart key={loanPerformanceData.length} data={loanPerformanceData} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
+                              <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
+                              <XAxis dataKey="bank" tick={{ fill: "#cbd5e1", fontSize: 9 }} />
+                              <YAxis tick={{ fill: "#cbd5e1", fontSize: 10 }} />
+                              <Tooltip formatter={formatAPR} />
+                              <Line type="monotone" dataKey="apr" stroke="#fbbf24" strokeWidth={3} dot={{ r: 3 }} />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </Glass>
+                    </div>
+                  </div>
+                </div>
+              </div>
+    )}
+
+    {tab === "comparison" && (
+      <section className="space-y-6">
+        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+          <div>
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-indigo-400/30 bg-indigo-500/10 text-indigo-300">
+                <Layers size={22} />
+              </span>
+              <h1 className="text-2xl font-bold text-white">歷史跨期對決</h1>
             </div>
-          </Glass>
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">
-              總收入
-            </span>
-            <div className="text-2xl font-black text-emerald-400 mt-1">
-              {money(totalIncome)}
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
+              當您在明細頁面完成每月結算與封存後，數據將在此進行對比。
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-xl border border-slate-700 bg-slate-900/80 p-1" role="group" aria-label="比較模式">
+              <button
+                type="button"
+                aria-pressed={comparisonMode === "month"}
+                onClick={() => setComparisonMode("month")}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${comparisonMode === "month" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"}`}
+              >
+                月度對決
+              </button>
+              <button
+                type="button"
+                aria-pressed={comparisonMode === "year"}
+                onClick={() => setComparisonMode("year")}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${comparisonMode === "year" ? "bg-indigo-600 text-white shadow-md" : "text-slate-400 hover:text-white"}`}
+              >
+                年度回顧
+              </button>
             </div>
-          </Glass>
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">
-              總開支
-            </span>
-            <div className="text-2xl font-black text-rose-400 mt-1">
-              {money(totalExpense)}
-            </div>
-          </Glass>
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">
-              貸款總本金
-            </span>
-            <div className="text-2xl font-black text-amber-400 mt-1">
-              {money(totalLoanPrincipal)}
-            </div>
-          </Glass>
+
+            <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-300">
+              <CalendarDays size={16} className="text-indigo-300" />
+              {comparisonMode === "month" ? (
+                <input
+                  type="month"
+                  aria-label="選擇比較月份"
+                  value={comparisonMonth}
+                  onChange={(event) => setComparisonMonth(event.target.value)}
+                  className="min-w-0 bg-transparent text-white outline-none [color-scheme:dark]"
+                />
+              ) : (
+                <select
+                  aria-label="選擇比較年份"
+                  value={comparisonMonth.slice(0, 4)}
+                  onChange={(event) => setComparisonMonth(`${event.target.value}-12`)}
+                  className="bg-transparent text-white outline-none [color-scheme:dark]"
+                >
+                  {comparisonYears.map((year) => <option key={year} value={year}>{year}</option>)}
+                </select>
+              )}
+            </label>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Glass className="p-6">
-            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-              <PieIcon size={18} className="text-cyan-400" />
-              開支類別分佈
-            </h3>
-            {categoryPieData.length === 0 ? (
-              <Empty>暫無交易資料以製作圖表</Empty>
-            ) : (
-              <div className="h-64">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          {[
+            { key: "income", title: "封存收入對比", color: "text-emerald-400" },
+            { key: "expense", title: "封存支出對比", color: "text-rose-400" },
+            { key: "netCashflow", title: "淨現金流對比", color: "text-cyan-400" },
+          ].map(({ key, title, color }) => {
+            const currentValue = comparisonPeriod.current[key];
+            const previousValue = comparisonPeriod.previous[key];
+            const hasPrevious = comparisonPeriod.hasPrevious;
+            const percentChange = previousValue === 0
+              ? null
+              : ((currentValue - previousValue) / previousValue) * 100;
+            const movedUp = currentValue > previousValue;
+            const isFavorable = !hasPrevious
+              ? false
+              : key === "expense" ? currentValue <= previousValue : currentValue >= previousValue;
+            const TrendIcon = percentChange === null
+              ? (movedUp ? ArrowUpRight : ArrowDownRight)
+              : movedUp ? ArrowUpRight : ArrowDownRight;
+            const badgeClass = !hasPrevious
+              ? "border-slate-700 bg-slate-800/80 text-slate-400"
+              : isFavorable
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                : "border-rose-500/20 bg-rose-500/10 text-rose-400";
+
+            return (
+              <section key={key} className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20 backdrop-blur-md transition-all hover:border-indigo-500/40">
+                <div className="text-sm font-medium text-slate-400">{title}</div>
+                <div className={`mt-3 text-2xl font-bold ${color}`}>{money(currentValue)}</div>
+                <div className="mt-2 text-xs text-slate-500">對比前期 ({comparisonPeriod.previousPeriod})</div>
+                <div className="mt-4 flex justify-end">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${badgeClass}`}>
+                    {hasPrevious ? (
+                      <>
+                        <TrendIcon size={14} />
+                        {percentChange === null
+                          ? currentValue > 0 ? "新紀錄" : "0.0%"
+                          : `${percentChange > 0 ? "+" : ""}${percentChange.toFixed(1)}%`}
+                      </>
+                    ) : "尚無前期資料"}
+                  </span>
+                </div>
+              </section>
+            );
+          })}
+        </div>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg shadow-black/20 backdrop-blur-md md:p-6">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-white">📊 {comparisonMode === "month" ? "月度數據深度對決" : "年度數據深度對決"}</h2>
+            <span className="text-xs text-slate-400">金額：HKD</span>
+          </div>
+          {!comparisonPeriod.hasCurrent && !comparisonPeriod.hasPrevious ? (
+            <Empty icon={Archive}>尚無歷史封存數據。完成封存後，即可比較不同月份或年度。</Empty>
+          ) : (
+            <>
+              <div className="h-80 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={categoryPieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      label
-                    >
-                      {categoryPieData.map((entry, index) => (
-                        <Cell
-                          key={`cell-${entry.name}`}
-                          fill={COLORS[index % COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(v) => money(v)} />
-                  </PieChart>
+                  <BarChart data={comparisonPeriod.chartData} barGap={12} margin={{ top: 12, right: 16, left: 8, bottom: 8 }}>
+                    <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
+                    <XAxis dataKey="metric" tick={{ fill: "#cbd5e1", fontSize: 12 }} />
+                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={(value) => `${Math.round(value / 1000)}k`} />
+                    <Tooltip formatter={(value) => money(value)} />
+                    <Legend
+                      align="center"
+                      verticalAlign="bottom"
+                      formatter={(value) => <span className="text-slate-300">{value}</span>}
+                    />
+                    <Bar dataKey="previous" name={`前期 (${comparisonPeriod.previousPeriod})`} fill="#475569" radius={[6, 6, 0, 0]} />
+                    <Bar dataKey="current" name={`當期 (${comparisonPeriod.currentPeriod})`} fill="#6366f1" radius={[6, 6, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
-            )}
-          </Glass>
-
-          <Glass className="p-6">
-            <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-              <Receipt size={18} className="text-cyan-400" />
-              最新交易預覽
-            </h3>
-            {transactions.length === 0 ? (
-              <Empty>暫無交易紀錄</Empty>
-            ) : (
-              <div className="space-y-3">
-                {transactions.slice(0, 5).map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="flex items-center justify-between p-3 bg-slate-950/60 rounded-xl border border-slate-800/80"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-white">
-                        {tx.description}
-                      </div>
-                      <span className="text-xs text-slate-500">
-                        {tx.date} · {tx.category}
-                      </span>
-                    </div>
-                    <span className="text-sm font-bold text-rose-400">
-                      -{money(tx.amount)}
-                    </span>
-                  </div>
-                ))}
+              <div className="mt-3 flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs text-slate-400">
+                <span><i className="mr-2 inline-block h-2.5 w-2.5 rounded-sm bg-slate-600" />前期 ({comparisonPeriod.previousPeriod})</span>
+                <span><i className="mr-2 inline-block h-2.5 w-2.5 rounded-sm bg-indigo-500" />當期 ({comparisonPeriod.currentPeriod})</span>
               </div>
-            )}
-          </Glass>
-        </div>
-      </div>
+            </>
+          )}
+        </section>
+      </section>
     )}
 
-    {/* ====== 財務總覽報表 ====== */}
-    {tab === "overview" && (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">總收入</span>
-            <div className="text-2xl font-black text-emerald-400 mt-1">
-              {money(totalIncome)}
-            </div>
-          </Glass>
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">總開支</span>
-            <div className="text-2xl font-black text-rose-400 mt-1">
-              {money(totalExpense)}
-            </div>
-          </Glass>
-          <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">月淨額</span>
-            <div className="text-2xl font-black text-cyan-400 mt-1">
-              {money(monthlyNetData[monthlyNetData.length - 1]?.net || 0)}
-            </div>
-          </Glass>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <Glass className="p-6">
-            <h3 className="text-base font-bold text-white mb-4">月度收支趨勢</h3>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthlyNetData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="incomeFill" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#34d399" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#34d399" stopOpacity={0.05} />
-                    </linearGradient>
-                    <linearGradient id="expenseFill" x1="0" x2="0" y1="0" y2="1">
-                      <stop offset="5%" stopColor="#fb7185" stopOpacity={0.8} />
-                      <stop offset="95%" stopColor="#fb7185" stopOpacity={0.05} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <Tooltip formatter={(value) => money(value)} />
-                  <Area type="monotone" dataKey="income" stroke="#34d399" fill="url(#incomeFill)" strokeWidth={2} />
-                  <Area type="monotone" dataKey="expense" stroke="#fb7185" fill="url(#expenseFill)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </Glass>
-
-          <Glass className="p-6">
-            <h3 className="text-base font-bold text-white mb-4">支出類別排行</h3>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryBreakdownData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
-                  <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                  <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <Tooltip formatter={(value) => money(value)} />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#22d3ee" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Glass>
-        </div>
-
-        <Glass className="p-6">
-          <h3 className="text-base font-bold text-white mb-4">貸款 APR 比較</h3>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart key={loanPerformanceData.length} data={loanPerformanceData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
-                <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
-                <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip formatter={formatAPR} />
-                <Line type="monotone" dataKey="apr" stroke="#fbbf24" strokeWidth={3} dot={{ r: 4 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Glass>
-      </div>
-    )}
-
-    {/* ====== Tab 3: 貸款分析 ====== */}
     {tab === "analysis" && (
       <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">總月供</span>
-            <div className="text-2xl font-black text-cyan-400 mt-1">
-              {money(loanForecastSummary.totalMonthlyPayment)}
-            </div>
+            <span className="text-xs font-medium text-slate-300">總月供</span>
+            <div className="mt-1 text-2xl font-black text-cyan-300">{money(loanForecastSummary.totalMonthlyPayment)}</div>
           </Glass>
           <Glass className="p-5">
-            <span className="text-xs text-slate-400 font-medium">預估利息</span>
+            <span className="text-xs font-medium text-slate-300">預估利息</span>
             <div className="text-2xl font-black text-amber-400 mt-1">
               {money(loanForecastSummary.totalInterest)}
             </div>
@@ -1441,16 +1838,13 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
     {tab === "cards" && (
       <div className="space-y-6">
         <Glass className="p-6">
-          <h3 className="text-lg font-bold text-white mb-4">新增信用卡</h3>
-          <form
-            onSubmit={handleAddCard}
-            className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4"
-          >
+          <h3 className="mb-4 text-lg font-bold text-white">新增信用卡</h3>
+          <form onSubmit={handleAddCard} className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
             <Field label="卡片名稱">
               <input
                 type="text"
                 placeholder="如：Citi Cash Back"
-                className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-white outline-none focus:border-cyan-500"
+                className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500"
                 value={newCard.name}
                 onChange={(e) =>
                   setNewCard({ ...newCard, name: e.target.value })
@@ -1768,7 +2162,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="font-bold text-rose-400">
-                          -{money(tx.amount)}
+                          {money(tx.amount)}
                         </span>
                         <button
                           onClick={() => setEditingTx({ ...tx, amount: String(tx.amount) })}
@@ -1802,7 +2196,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           <h3 className="text-lg font-bold text-white mb-4">新增收入紀錄</h3>
           <form
             onSubmit={handleAddIncome}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
           >
             <Field label="收入來源">
               <input
@@ -1812,6 +2206,16 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                 value={newIncome.source}
                 onChange={(e) =>
                   setNewIncome({ ...newIncome, source: e.target.value })
+                }
+              />
+            </Field>
+            <Field label="收入日期">
+              <input
+                type="date"
+                className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
+                value={newIncome.date}
+                onChange={(e) =>
+                  setNewIncome({ ...newIncome, date: e.target.value })
                 }
               />
             </Field>
@@ -2303,6 +2707,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
         )}
       </div>
     )}
+    </main>
   </div>
 
 
