@@ -123,6 +123,16 @@ const money = (value) =>
     maximumFractionDigits: 2,
   })}`;
 
+const formatAPR = (value) => {
+  const apr = Number(value);
+  return Number.isFinite(apr) && apr >= 0 ? `${apr.toFixed(2)}%` : "0.00%";
+};
+
+const parseLoanInput = (value, integer = false) => {
+  const parsed = integer ? Number.parseInt(value, 10) : Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 const createId = (prefix) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -136,50 +146,99 @@ const loanMetrics = (
   rebate = 0,
   upfrontFee = 0
 ) => {
-  const amount = Number(principal) || 0;
-  const monthlyPayment = Number(payment) || 0;
-  const months = Number(termMonths) || 0;
-  const cashback = Number(rebate) || 0;
-  const fee = Number(upfrontFee) || 0;
+  const toFiniteAmount = (value) => {
+    const number = Math.abs(Number(value));
+    return Number.isFinite(number) ? number : 0;
+  };
+  const amount = toFiniteAmount(principal);
+  const monthlyPayment = toFiniteAmount(payment);
+  const months = toFiniteAmount(termMonths);
+  const cashback = toFiniteAmount(rebate);
+  const fee = toFiniteAmount(upfrontFee);
 
-  // 淨實收借款額 = 本金 - 手續費 + 現金回贈
+  // 第 0 期淨現金流入；後續每期支付 monthlyPayment
   const netCashReceived = amount - fee + cashback;
   const totalRepayment = monthlyPayment * months;
-  const interest = Math.max(0, totalRepayment - netCashReceived);
+  const interest = Math.max(0, totalRepayment + fee - cashback - amount);
+  const simpleApr =
+    amount > 0 && months > 0
+      ? (interest / amount) * (12 / months) * 100
+      : 0;
+  const fallbackApr = Number.isFinite(simpleApr) && simpleApr >= 0 ? simpleApr : 0;
 
   if (
     !netCashReceived ||
     !monthlyPayment ||
     !months ||
+    !Number.isFinite(netCashReceived) ||
+    !Number.isFinite(totalRepayment) ||
     totalRepayment <= netCashReceived
   ) {
-    return { interest: 0, apr: 0, netCashReceived: 0, totalRepayment: 0 };
+    return { interest, apr: 0, netCashReceived, totalRepayment };
   }
 
-  // 二分法逼近 IRR 內部收益率
-  let low = -0.9999;
+  const getNpv = (monthlyRate) => {
+    let discountedPayments = 0;
+    let discountFactor = 1;
+    for (let period = 1; period <= months; period += 1) {
+      discountFactor /= 1 + monthlyRate;
+      discountedPayments += monthlyPayment * discountFactor;
+    }
+    return netCashReceived - discountedPayments;
+  };
+
+  let low = 0.0;
   let high = 1.0;
-
-  for (let index = 0; index < 200; index += 1) {
-    const monthlyRate = (low + high) / 2;
-    const annuityFactor =
-      Math.abs(monthlyRate) < Number.EPSILON
-        ? months
-        : ((1 + monthlyRate) ** months - 1) / monthlyRate;
-    const balance =
-      netCashReceived * (1 + monthlyRate) ** months -
-      monthlyPayment * annuityFactor;
-
-    if (balance > 0) low = monthlyRate;
-    else high = monthlyRate;
+  while (getNpv(high) <= 0 && high < 1e24) {
+    high *= 2;
   }
 
-  const monthlyRate = (low + high) / 2;
-  const apr = Number.isFinite((1 + monthlyRate) ** 12 - 1)
-    ? ((1 + monthlyRate) ** 12 - 1) * 100
-    : 0;
+  if (getNpv(high) <= 0) {
+    return { interest, apr: fallbackApr, netCashReceived, totalRepayment };
+  }
 
-  return { interest, apr, netCashReceived, totalRepayment };
+  for (let iter = 0; iter < 120; iter++) {
+    const monthlyRate = (low + high) / 2;
+    if (getNpv(monthlyRate) > 0) {
+      high = monthlyRate;
+    } else {
+      low = monthlyRate;
+    }
+
+    if (Math.abs(high - low) < 1e-12) break;
+  }
+
+  const finalMonthlyRate = (low + high) / 2;
+  const calculatedApr = (Math.pow(1 + finalMonthlyRate, 12) - 1) * 100;
+  const apr =
+    Number.isFinite(calculatedApr) && calculatedApr >= 0
+      ? calculatedApr
+      : fallbackApr;
+
+  return {
+    interest,
+    apr,
+    netCashReceived,
+    totalRepayment,
+  };
+};
+
+const normalizeLoan = (loan) => {
+  const record = loan && typeof loan === "object" ? loan : {};
+  return {
+    ...record,
+    id:
+      record.id === undefined || record.id === null || record.id === ""
+        ? createId("loan")
+        : record.id,
+    apr: loanMetrics(
+      record.principal,
+      record.monthlyPayment,
+      record.months,
+      record.rebate,
+      record.upfrontFee
+    ).apr,
+  };
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -279,7 +338,20 @@ fromStorage(STORAGE_KEY_TX)
 const [incomes, setIncomes] = useState(() =>
 fromStorage(STORAGE_KEY_INCOME)
 );
-const [loans, setLoans] = useState(() => fromStorage(STORAGE_KEY_LOANS));
+const [loans, setLoans] = useState(() => {
+  const storedLoans = fromStorage(STORAGE_KEY_LOANS);
+  return Array.isArray(storedLoans) ? storedLoans.map(normalizeLoan) : [];
+});
+const loansRef = useRef(loans);
+const commitLoans = (nextLoans) => {
+  loansRef.current = nextLoans;
+  setLoans(nextLoans);
+  try {
+    localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(nextLoans));
+  } catch (error) {
+    console.error("Failed to persist loan records:", error);
+  }
+};
 const [loanMemos, setLoanMemos] = useState(() =>
 fromStorage(STORAGE_KEY_LOAN_MEMOS)
 );
@@ -310,9 +382,9 @@ const [newLoan, setNewLoan] = useState({
 bank: LOAN_BANKS[0][0],
 principal: "",
 monthlyPayment: "",
-months: "60",
-upfrontFee: "0",
-rebate: "5000",
+months: "",
+upfrontFee: "",
+rebate: "",
 date: today(),
 });
 const [newMemo, setNewMemo] = useState("");
@@ -333,6 +405,37 @@ setCloudStatus("local");
 }
 });
 return () => unsubscribe();
+}, []);
+
+useEffect(() => {
+  loansRef.current = loans;
+  try {
+    localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(loans));
+  } catch (error) {
+    console.error("Failed to persist loan records:", error);
+  }
+}, [loans]);
+
+useEffect(() => {
+  const syncLoansFromStorage = (event) => {
+    if (event.key !== STORAGE_KEY_LOANS && event.key !== null) return;
+
+    try {
+      const storedLoans = event.newValue ? JSON.parse(event.newValue) : [];
+      const nextLoans = Array.isArray(storedLoans)
+        ? storedLoans.map(normalizeLoan)
+        : [];
+      loansRef.current = nextLoans;
+      setLoans(nextLoans);
+    } catch (error) {
+      console.error("Failed to sync loan records from storage:", error);
+      loansRef.current = [];
+      setLoans([]);
+    }
+  };
+
+  window.addEventListener("storage", syncLoansFromStorage);
+  return () => window.removeEventListener("storage", syncLoansFromStorage);
 }, []);
 
 // 財務數據總結計算
@@ -357,11 +460,11 @@ const cardNameById = useMemo(
 // 當前貸款輸入項目之即時 APR 指標
 const currentMetrics = useMemo(() => {
 return loanMetrics(
-newLoan.principal,
-newLoan.monthlyPayment,
-newLoan.months,
-newLoan.rebate,
-newLoan.upfrontFee
+parseLoanInput(newLoan.principal),
+parseLoanInput(newLoan.monthlyPayment),
+parseLoanInput(newLoan.months, true),
+parseLoanInput(newLoan.rebate),
+parseLoanInput(newLoan.upfrontFee)
 );
 }, [newLoan]);
 
@@ -459,7 +562,7 @@ const loanPerformanceData = useMemo(
     loanListWithMetrics.map((item) => ({
       bank: item.bank,
       principal: Number(item.principal || 0),
-      apr: Number(item.apr || 0),
+      apr: Number.isFinite(item.apr) && item.apr >= 0 ? item.apr : 0,
       month: Number(item.months || 0),
     })),
   [loanListWithMetrics]
@@ -472,19 +575,28 @@ const averageMonthlyIncome = useMemo(
 
 const loanComparisonData = useMemo(() => {
   return loanListWithMetrics
-    .map((item) => ({
-      bank: item.bank,
-      principal: Number(item.principal || 0),
-      monthlyPayment: Number(item.monthlyPayment || 0),
-      apr: Number(item.apr || 0),
-      totalRepayment: Number(item.totalRepayment || 0),
-      totalInterest: Number(item.interest || 0),
-      months: Number(item.months || 0),
-      budgetShare: averageMonthlyIncome
-        ? ((Number(item.monthlyPayment || 0) / averageMonthlyIncome) * 100)
-        : 0,
-    }))
-    .sort((a, b) => b.apr - a.apr);
+    .map((item) => {
+      const income = Number(averageMonthlyIncome) || 0;
+      const monthlyPayment = Number(item.monthlyPayment || 0);
+      const apr =
+        typeof item.apr === "number" && Number.isFinite(item.apr) && item.apr >= 0
+          ? item.apr
+          : 0;
+      const budgetShare = income > 0 ? (monthlyPayment / income) * 100 : 0;
+
+      return {
+        bank: item.bank,
+        principal: Number(item.principal || 0),
+        monthlyPayment,
+        apr,
+        totalRepayment: Number(item.totalRepayment || 0),
+        totalInterest: Number(item.interest || 0),
+        months: Number(item.months || 0),
+        budgetShare:
+          Number.isFinite(budgetShare) && budgetShare >= 0 ? budgetShare : 0,
+      };
+    })
+    .sort((a, b) => (Number(b.apr) || 0) - (Number(a.apr) || 0));
 }, [averageMonthlyIncome, loanListWithMetrics]);
 
 const loanForecastSummary = useMemo(() => {
@@ -496,17 +608,27 @@ const loanForecastSummary = useMemo(() => {
     (sum, item) => sum + Number(item.interest || 0),
     0
   );
-  const maxApr = loanComparisonData[0]?.apr || 0;
-  const lowestApr = loanComparisonData[loanComparisonData.length - 1]?.apr || 0;
+  const validLoans = loanComparisonData.filter(
+    (item) => typeof item.apr === "number" && Number.isFinite(item.apr) && item.apr >= 0
+  );
+  const maxApr = validLoans.length > 0 ? Number(validLoans[0]?.apr || 0) : 0;
+  const lowestApr =
+    validLoans.length > 0
+      ? Number(validLoans[validLoans.length - 1]?.apr || 0)
+      : 0;
+  const income = Number(averageMonthlyIncome) || 0;
+  const debtToIncomeRatio =
+    income > 0 ? (totalMonthlyPayment / income) * 100 : 0;
 
   return {
     totalMonthlyPayment,
     totalInterest,
-    maxApr,
-    lowestApr,
-    debtToIncomeRatio: averageMonthlyIncome
-      ? (totalMonthlyPayment / averageMonthlyIncome) * 100
-      : 0,
+    maxApr: Number.isFinite(maxApr) && maxApr >= 0 ? maxApr : 0,
+    lowestApr: Number.isFinite(lowestApr) && lowestApr >= 0 ? lowestApr : 0,
+    debtToIncomeRatio:
+      Number.isFinite(debtToIncomeRatio) && debtToIncomeRatio >= 0
+        ? debtToIncomeRatio
+        : 0,
   };
 }, [averageMonthlyIncome, loanComparisonData, loanListWithMetrics]);
 
@@ -663,7 +785,7 @@ const importWorkbook = async (event) => {
       date: row.date || today(),
     }));
 
-    const importedLoans = parseRows(["loans", "loan", "貸款"]).map((row) => ({
+    const importedLoans = parseRows(["loans", "loan", "貸款"]).map((row) => normalizeLoan({
       id: row.id || createId("loan"),
       bank: row.bank || LOAN_BANKS[0][0],
       principal: Number(row.principal || 0),
@@ -695,13 +817,12 @@ const importWorkbook = async (event) => {
     setCards(nextCards);
     setTransactions(nextTransactions);
     setIncomes(nextIncomes);
-    setLoans(nextLoans);
+    commitLoans(nextLoans);
     setLoanMemos(nextMemos);
 
     localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(nextCards));
     localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(nextTransactions));
     localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(nextIncomes));
-    localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(nextLoans));
     localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(nextMemos));
     window.alert("匯入完成，資料已更新。")
   } catch (error) {
@@ -870,7 +991,7 @@ localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(next));
 const handleAddLoan = (e) => {
 e.preventDefault();
 if (!newLoan.principal || !newLoan.monthlyPayment) return;
-const item = {
+const item = normalizeLoan({
 id: createId("loan"),
 bank: newLoan.bank,
 principal: Number(newLoan.principal) || 0,
@@ -879,25 +1000,26 @@ months: Number(newLoan.months) || 0,
 upfrontFee: Number(newLoan.upfrontFee) || 0,
 rebate: Number(newLoan.rebate) || 0,
 date: newLoan.date,
-};
-const next = [item, ...loans];
-setLoans(next);
-localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(next));
+});
+const next = [item, ...loansRef.current];
+commitLoans(next);
 setNewLoan({
 bank: LOAN_BANKS[0][0],
 principal: "",
 monthlyPayment: "",
-months: "60",
-upfrontFee: "0",
-rebate: "5000",
+months: "",
+upfrontFee: "",
+rebate: "",
 date: today(),
 });
 };
 
-const handleDeleteLoan = (id) => {
-const next = loans.filter((l) => l.id !== id);
-setLoans(next);
-localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(next));
+const handleDeleteLoan = (event, id, loanIndex) => {
+event.preventDefault();
+event.stopPropagation();
+console.log("Deleting loan:", id);
+const next = loansRef.current.filter((_, index) => index !== loanIndex);
+commitLoans(next);
 };
 
 // CRUD 處理：財務備忘錄
@@ -1194,11 +1316,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           <h3 className="text-base font-bold text-white mb-4">貸款 APR 比較</h3>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={loanPerformanceData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
+              <LineChart key={loanPerformanceData.length} data={loanPerformanceData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
                 <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                 <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                <Tooltip formatter={(value) => `${Number(value).toFixed(2)}%`} />
+                <Tooltip formatter={formatAPR} />
                 <Line type="monotone" dataKey="apr" stroke="#fbbf24" strokeWidth={3} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -1226,13 +1348,16 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           <Glass className="p-5">
             <span className="text-xs text-slate-400 font-medium">最高 APR</span>
             <div className="text-2xl font-black text-rose-400 mt-1">
-              {loanForecastSummary.maxApr.toFixed(2)}%
+              {formatAPR(loanForecastSummary.maxApr)}
             </div>
           </Glass>
           <Glass className="p-5">
             <span className="text-xs text-slate-400 font-medium">負債收入比</span>
             <div className="text-2xl font-black text-emerald-400 mt-1">
-              {loanForecastSummary.debtToIncomeRatio.toFixed(1)}%
+              {Number.isFinite(loanForecastSummary.debtToIncomeRatio) &&
+              loanForecastSummary.debtToIncomeRatio >= 0
+                ? `${loanForecastSummary.debtToIncomeRatio.toFixed(1)}%`
+                : "0.0%"}
             </div>
           </Glass>
         </div>
@@ -1242,11 +1367,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             <h3 className="text-base font-bold text-white mb-4">貸款 APR 比較</h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
+                <BarChart key={loanComparisonData.length} data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
                   <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                   <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <Tooltip formatter={(value) => `${Number(value).toFixed(2)}%`} />
+                  <Tooltip formatter={formatAPR} />
                   <Bar dataKey="apr" fill="#38bdf8" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -1257,7 +1382,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             <h3 className="text-base font-bold text-white mb-4">月供壓力與預測</h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
+                <LineChart key={loanComparisonData.length} data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
                   <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                   <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
@@ -1293,9 +1418,15 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       <td className="py-3 pr-4 text-white">{item.bank}</td>
                       <td className="py-3 pr-4 text-right text-slate-200">{money(item.principal)}</td>
                       <td className="py-3 pr-4 text-right text-slate-200">{money(item.monthlyPayment)}</td>
-                      <td className="py-3 pr-4 text-right font-bold text-cyan-400">{item.apr.toFixed(2)}%</td>
+                      <td className="py-3 pr-4 text-right font-bold text-cyan-400">
+                        {formatAPR(item.apr)}
+                      </td>
                       <td className="py-3 pr-4 text-right text-amber-300">{money(item.totalInterest)}</td>
-                      <td className="py-3 pr-4 text-right text-emerald-400">{item.budgetShare.toFixed(1)}%</td>
+                      <td className="py-3 pr-4 text-right text-emerald-400">
+                        {Number.isFinite(item.budgetShare) && item.budgetShare >= 0
+                          ? `${item.budgetShare.toFixed(1)}%`
+                          : "0.0%"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1919,9 +2050,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                     實際年利率 APR
                   </span>
                   <span className="text-cyan-400 font-bold text-lg block mt-0.5">
-                    {newLoan.months
-                      ? `${currentMetrics.apr.toFixed(2)}%`
-                      : "0.00%"}
+                    {newLoan.months ? formatAPR(currentMetrics.apr) : "0.00%"}
                   </span>
                 </div>
               </div>
@@ -1956,12 +2085,19 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
                   <div className="text-xs text-slate-400">平均 APR</div>
                   <div className="mt-2 text-xl font-black text-cyan-400">
-                    {loanListWithMetrics.length
-                      ? `${(
-                          loanListWithMetrics.reduce((sum, item) => sum + Number(item.apr || 0), 0) /
-                          loanListWithMetrics.length
-                        ).toFixed(2)}%`
-                      : "0.00%"}
+                    {(() => {
+                      const averageApr = loanListWithMetrics.length
+                        ? loanListWithMetrics.reduce(
+                            (sum, item) =>
+                              sum +
+                              (Number.isFinite(item.apr) && item.apr >= 0
+                                ? item.apr
+                                : 0),
+                            0
+                          ) / loanListWithMetrics.length
+                        : 0;
+                      return formatAPR(averageApr);
+                    })()}
                   </div>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4">
@@ -1990,7 +2126,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                     </tr>
                   </thead>
                   <tbody>
-                    {loanListWithMetrics.map((item) => (
+                    {loanListWithMetrics.map((item, index) => (
                       <tr key={item.id} className="border-t border-slate-800/80">
                         <td className="py-3 pr-4 text-slate-300">{item.date}</td>
                         <td className="py-3 pr-4 text-white">{item.bank}</td>
@@ -1999,11 +2135,14 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                           {money(item.monthlyPayment)} x {item.months}期
                         </td>
                         <td className="py-3 pr-4 font-bold text-cyan-400">
-                          {Number(item.apr || 0).toFixed(2)}%
+                          {formatAPR(item.apr)}
                         </td>
                         <td className="py-3 text-right">
                           <button
-                            onClick={() => handleDeleteLoan(item.id)}
+                            type="button"
+                            onClick={(event) =>
+                              handleDeleteLoan(event, item.id, index)
+                            }
                             className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
                           >
                             <Trash2 size={16} />
@@ -2016,7 +2155,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
               </div>
 
               <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {loanListWithMetrics.map((item) => (
+                {loanListWithMetrics.map((item, index) => (
                   <div
                     key={item.id}
                     className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3"
@@ -2027,7 +2166,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                         <h4 className="text-base font-bold text-white">{item.bank}</h4>
                       </div>
                       <button
-                        onClick={() => handleDeleteLoan(item.id)}
+                        type="button"
+                        onClick={(event) =>
+                          handleDeleteLoan(event, item.id, index)
+                        }
                         className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
                       >
                         <Trash2 size={16} />
@@ -2055,7 +2197,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                         回贈: {money(item.rebate || 0)}
                       </span>
                       <span className="text-[11px] bg-cyan-950/80 border border-cyan-800 text-cyan-300 font-bold px-2 py-0.5 rounded ml-auto">
-                        APR: {Number(item.apr || 0).toFixed(2)}%
+                        APR: {formatAPR(item.apr)}
                       </span>
                     </div>
                   </div>
