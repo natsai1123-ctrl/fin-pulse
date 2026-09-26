@@ -29,8 +29,8 @@ const missingVariables = requiredFirebaseVariables
 const hasFirebaseConfig = missingVariables.length === 0;
 
 if (!hasFirebaseConfig) {
-	console.error(
-		`Firebase initialization skipped. Missing Render environment variables: ${missingVariables.join(", ")}. Using local preview mode.`,
+	console.info(
+		`Firebase not configured. Running in local preview mode without cloud sync. Missing variables: ${missingVariables.join(", ")}.`,
 	);
 }
 
