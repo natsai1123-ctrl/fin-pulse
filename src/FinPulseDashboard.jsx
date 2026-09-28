@@ -3,6 +3,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Archive,
+  Calendar,
   CalendarDays,
   ChartPie as PieIcon,
   Cloud,
@@ -285,6 +286,32 @@ const normalizeLoan = (loan) => {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const getGoogleCalendarUrl = (card) => {
+  let dueDate = card.dueDate || today();
+  let startDate = new Date(`${dueDate}T00:00:00Z`);
+  if (
+    Number.isNaN(startDate.getTime()) ||
+    startDate.toISOString().slice(0, 10) !== dueDate
+  ) {
+    dueDate = today();
+    startDate = new Date(`${dueDate}T00:00:00Z`);
+  }
+
+  const endDate = new Date(startDate);
+  endDate.setUTCDate(endDate.getUTCDate() + 1);
+  const formatCalendarDate = (date) =>
+    date.toISOString().slice(0, 10).replaceAll("-", "");
+  const amount = Number(card.paymentAmount ?? card.amount ?? 0).toLocaleString();
+  const parameters = new URLSearchParams({
+    action: "TEMPLATE",
+    text: `[還款提醒] ${card.bank} - ${card.name}`,
+    details: `應還金額：HK$${amount}\n發卡銀行：${card.bank}\n狀態：${card.isPaid ? "已結清" : "待還款"}`,
+    dates: `${formatCalendarDate(startDate)}/${formatCalendarDate(endDate)}`,
+  });
+
+  return `https://calendar.google.com/calendar/render?${parameters.toString()}`;
+};
 
 const formatMonthLabel = (dateValue) => {
   if (!dateValue) return "-";
@@ -2014,12 +2041,25 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       {card.name}
                     </h4>
                   </div>
-                  <button
-                    onClick={() => handleDeleteCard(card.id)}
-                    className="opacity-60 hover:opacity-100 p-1 cursor-pointer"
-                  >
-                    <Trash2 size={16} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      title="新增至 Google 日曆"
+                      aria-label="新增至 Google 日曆"
+                      onClick={() =>
+                        window.open(getGoogleCalendarUrl(card), "_blank")
+                      }
+                      className="opacity-75 hover:opacity-100 p-1 cursor-pointer"
+                    >
+                      <Calendar size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCard(card.id)}
+                      className="opacity-60 hover:opacity-100 p-1 cursor-pointer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <label className="text-xs opacity-70">
