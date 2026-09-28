@@ -83,6 +83,17 @@ const BANKS = [
 "其他銀行",
 ];
 
+const CARD_NAMES = [
+"銀聯雙幣卡",
+"Mastercard",
+"World Mastercard",
+"CX 卡",
+"A Point卡",
+"Enjoy卡",
+"AIA 萬事達卡",
+"八達通 VISA卡",
+];
+
 const LOAN_BANKS = [
 ["滙豐銀行 HSBC", "滙豐銀行 HSBC"],
 ["恆生銀行 Hang Seng", "恆生銀行 Hang Seng"],
@@ -109,24 +120,44 @@ const COLORS = [
 
 const TITANIUM_THEMES = [
 {
-name: "極光幻藍",
+name: "森林綠",
 cardBg:
-"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-cyan-400/30 text-white shadow-lg shadow-cyan-950/30 backdrop-blur-xl",
+"bg-gradient-to-br from-emerald-700 via-green-900 to-green-950 border-lime-200/60 text-white shadow-lg shadow-emerald-950/40 backdrop-blur-xl",
 },
 {
-name: "電光鈦藍",
+name: "向日葵金",
 cardBg:
-"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-sky-400/30 text-white shadow-lg shadow-sky-950/30 backdrop-blur-xl",
+"bg-gradient-to-br from-yellow-600 via-amber-800 to-orange-950 border-yellow-100/70 text-white shadow-lg shadow-amber-950/40 backdrop-blur-xl",
 },
 {
-name: "耀光赤金",
+name: "海洋藍",
 cardBg:
-"bg-gradient-to-br from-stone-800 via-slate-900 to-slate-950 border-amber-400/30 text-white shadow-lg shadow-amber-950/30 backdrop-blur-xl",
+"bg-gradient-to-br from-sky-700 via-blue-900 to-blue-950 border-cyan-200/60 text-white shadow-lg shadow-blue-950/40 backdrop-blur-xl",
 },
 {
-name: "薄荷翡翠",
+name: "赤陶橘",
 cardBg:
-"bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 border-emerald-400/30 text-white shadow-lg shadow-emerald-950/30 backdrop-blur-xl",
+"bg-gradient-to-br from-orange-600 via-red-800 to-red-950 border-orange-100/70 text-white shadow-lg shadow-red-950/40 backdrop-blur-xl",
+},
+{
+name: "珊瑚粉",
+cardBg:
+"bg-gradient-to-br from-pink-600 via-rose-800 to-rose-950 border-pink-100/70 text-white shadow-lg shadow-rose-950/40 backdrop-blur-xl",
+},
+{
+name: "翡翠青",
+cardBg:
+"bg-gradient-to-br from-teal-600 via-teal-900 to-cyan-950 border-teal-100/70 text-white shadow-lg shadow-teal-950/40 backdrop-blur-xl",
+},
+{
+name: "紫晶紫",
+cardBg:
+"bg-gradient-to-br from-violet-700 via-purple-900 to-purple-950 border-violet-100/70 text-white shadow-lg shadow-purple-950/40 backdrop-blur-xl",
+},
+{
+name: "大地棕",
+cardBg:
+"bg-gradient-to-br from-stone-600 via-amber-950 to-neutral-950 border-amber-100/70 text-white shadow-lg shadow-stone-950/40 backdrop-blur-xl",
 },
 ];
 
@@ -1101,6 +1132,7 @@ if (!newCard.name) return;
 const item = {
 ...newCard,
 id: createId("card"),
+themeIndex: CARD_NAMES.indexOf(newCard.name),
 paymentAmount: Number(newCard.paymentAmount) || 0,
 isPaid: false,
 };
@@ -1847,15 +1879,19 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           <h3 className="mb-4 text-lg font-bold text-white">新增信用卡</h3>
           <form onSubmit={handleAddCard} className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
             <Field label="卡片名稱">
-              <input
-                type="text"
-                placeholder="如：Citi Cash Back"
+              <select
+                required
                 className="rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500"
                 value={newCard.name}
                 onChange={(e) =>
                   setNewCard({ ...newCard, name: e.target.value })
                 }
-              />
+              >
+                <option value="" disabled>請選擇信用卡</option>
+                {CARD_NAMES.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
             </Field>
             <Field label="發卡銀行">
               <select
@@ -1905,7 +1941,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {cards.map((card, idx) => {
-            const theme = TITANIUM_THEMES[idx % TITANIUM_THEMES.length];
+            const theme = TITANIUM_THEMES[
+              Number.isInteger(card.themeIndex) && card.themeIndex >= 0
+                ? card.themeIndex % TITANIUM_THEMES.length
+                : idx % TITANIUM_THEMES.length
+            ];
             return (
               <div
                 key={card.id}
