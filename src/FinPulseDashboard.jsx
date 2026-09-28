@@ -288,14 +288,15 @@ const normalizeLoan = (loan) => {
 const today = () => new Date().toISOString().slice(0, 10);
 
 const getGoogleCalendarUrl = (card) => {
-  let dueDate = card.dueDate || today();
-  let startDate = new Date(`${dueDate}T00:00:00Z`);
+  const dueDate = card.dueDate || "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return "#";
+
+  const startDate = new Date(`${dueDate}T00:00:00Z`);
   if (
     Number.isNaN(startDate.getTime()) ||
     startDate.toISOString().slice(0, 10) !== dueDate
   ) {
-    dueDate = today();
-    startDate = new Date(`${dueDate}T00:00:00Z`);
+    return "#";
   }
 
   const endDate = new Date(startDate);
@@ -305,8 +306,8 @@ const getGoogleCalendarUrl = (card) => {
   const amount = Number(card.paymentAmount ?? card.amount ?? 0).toLocaleString();
   const parameters = new URLSearchParams({
     action: "TEMPLATE",
-    text: `[還款提醒] ${card.bank} - ${card.name}`,
-    details: `應還金額：HK$${amount}\n發卡銀行：${card.bank}\n狀態：${card.isPaid ? "已結清" : "待還款"}`,
+    text: `[FinPulse] 信用卡還款提醒: ${card.name} (${card.bank})`,
+    details: `發卡銀行: ${card.bank}\n卡片名稱: ${card.name}\n本期應還金額: HK$${amount}\n到期日: ${dueDate}\n\n請確保在到期日前完成還款，以避免產生罰款或利息。`,
     dates: `${formatCalendarDate(startDate)}/${formatCalendarDate(endDate)}`,
   });
 
@@ -2046,9 +2047,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       type="button"
                       title="新增至 Google 日曆"
                       aria-label="新增至 Google 日曆"
-                      onClick={() =>
-                        window.open(getGoogleCalendarUrl(card), "_blank")
-                      }
+                      disabled={!card.dueDate}
+                      onClick={() => {
+                        const calendarUrl = getGoogleCalendarUrl(card);
+                        if (calendarUrl !== "#") window.open(calendarUrl, "_blank");
+                      }}
                       className="opacity-75 hover:opacity-100 p-1 cursor-pointer"
                     >
                       <Calendar size={16} />
