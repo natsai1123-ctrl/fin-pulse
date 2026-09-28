@@ -2,6 +2,9 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap');
 :root { font-family: 'Manrope', sans-serif; color: #e2e8f0; background: #020817; font-synthesis: none; }
 * { box-sizing: border-box; } body, #root { margin: 0; min-width: 320px; min-height: 100vh; } button, input, select { font: inherit; } button { cursor: pointer; }
+.shimmer-text { display: inline-block; color: transparent; background: linear-gradient(105deg, #f8fafc 5%, #67e8f9 32%, #a7f3d0 50%, #c4b5fd 68%, #f8fafc 95%); background-size: 220% 100%; background-clip: text; -webkit-background-clip: text; animation: shimmerText 8s ease-in-out infinite; }
+@keyframes shimmerText { 0%, 100% { background-position: 100% 50%; } 50% { background-position: 0% 50%; } }
+@media (prefers-reduced-motion: reduce) { .shimmer-text { animation: none; background-position: 50% 50%; } }
 .app-shell { min-height: 100vh; background: radial-gradient(circle at 15% 20%, rgba(34,211,238,.18), transparent 18%), radial-gradient(circle at 80% 0%, rgba(168,85,247,.18), transparent 22%), radial-gradient(circle at 60% 100%, rgba(14,165,233,.12), transparent 28%), #020817; position: relative; }
 .glow-orb { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: .38; pointer-events: none; }
 .orb-1 { width: 260px; height: 260px; top: 50px; left: -40px; background: rgba(34,211,238,.22); }

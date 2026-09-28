@@ -294,14 +294,20 @@ function Glass({ children, className = "" }) {
 
 function Button({ children, variant = "ghost", className = "", ...props }) {
   const baseStyle =
-    "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 cursor-pointer";
+    "px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] active:translate-y-0 active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer";
   const variants = {
     primary:
-      "bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20",
+      "bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold shadow-lg shadow-cyan-500/20 hover:shadow-[0_0_20px_rgba(34,211,238,0.35)]",
     secondary:
-      "bg-gradient-to-b from-slate-600 to-slate-800 hover:from-slate-500 hover:to-slate-700 text-slate-100 border border-slate-400/30 shadow-md shadow-black/20",
+      "bg-gradient-to-b from-slate-600 to-slate-800 hover:from-slate-500 hover:to-slate-700 text-slate-100 border border-slate-400/30 shadow-md shadow-black/20 hover:shadow-[0_0_20px_rgba(148,163,184,0.25)]",
     archive:
-      "bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-400/30",
+      "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/35 shadow-md shadow-emerald-950/20 hover:shadow-[0_0_20px_rgba(52,211,153,0.3)]",
+    export:
+      "bg-gradient-to-r from-indigo-500/20 via-violet-500/20 to-blue-500/20 hover:from-indigo-500/35 hover:via-violet-500/35 hover:to-blue-500/35 text-indigo-200 border border-violet-400/35 shadow-md shadow-indigo-950/20 hover:shadow-[0_0_20px_rgba(139,92,246,0.35)]",
+    import:
+      "bg-gradient-to-r from-cyan-500/20 to-sky-500/20 hover:from-cyan-500/35 hover:to-sky-500/35 text-sky-200 border border-cyan-400/35 shadow-md shadow-cyan-950/20 hover:shadow-[0_0_20px_rgba(56,189,248,0.35)]",
+    logout:
+      "bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-200 border border-slate-600/70 hover:border-rose-400/50 shadow-md shadow-black/20 hover:shadow-[0_0_20px_rgba(251,113,133,0.25)]",
     complete:
       "bg-emerald-500/10 text-emerald-300 border border-emerald-400/30 cursor-default",
     danger:
@@ -1294,7 +1300,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
               FP
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight text-white">FinPulse</h1>
+              <h1 className="shimmer-text text-xl font-black tracking-tight">FINPULSE</h1>
               <p className="text-[11px] text-slate-400">
                 個人資產、信用卡與貸款 HKMA APR 智能管理系統
               </p>
@@ -1327,11 +1333,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             {archiveComplete ? "已成功封存" : "一按封存當月數據"}
           </Button>
 
-          <Button variant="secondary" onClick={exportWorkbook} className="text-xs">
+          <Button variant="export" onClick={exportWorkbook} className="text-xs">
             匯出 XLSX
           </Button>
           <Button
-            variant="primary"
+            variant="import"
             onClick={() => fileInputRef.current?.click()}
             className="text-xs"
           >
@@ -1348,7 +1354,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
         {user ? (
           <Button
-            variant="secondary"
+            variant="logout"
             onClick={handleLogout}
             className="text-xs"
           >
