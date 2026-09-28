@@ -8,6 +8,7 @@ import {
   ChartPie as PieIcon,
   Cloud,
   CloudCheck,
+  Copy,
   CreditCard,
   Database,
   FileText,
@@ -286,6 +287,55 @@ const normalizeLoan = (loan) => {
 };
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const generateRepaymentText = (cards) => {
+  const unpaidCards = cards
+    .filter((card) => !card.isPaid)
+    .map((card) => {
+      const amount = Number(card.paymentAmount ?? card.amount ?? 0);
+      return {
+        ...card,
+        repaymentAmount: Number.isFinite(amount) ? amount : 0,
+      };
+    })
+    .sort((left, right) => {
+      const leftDate = left.dueDate || "9999-12-31";
+      const rightDate = right.dueDate || "9999-12-31";
+      return leftDate.localeCompare(rightDate);
+    });
+  const totalAmount = unpaidCards.reduce(
+    (total, card) => total + card.repaymentAmount,
+    0
+  );
+  const formattedAmount = (amount) =>
+    amount.toLocaleString("en-HK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const divider = "-".repeat(40);
+  const details = unpaidCards.length
+    ? unpaidCards
+        .map(
+          (card, index) =>
+            `${index + 1}. ${card.bank || "未設定銀行"} - ${card.name || "未命名信用卡"}\n` +
+              `   • 應還金額：HK$${formattedAmount(card.repaymentAmount)}\n` +
+              `   • 到期日：${card.dueDate || "未設定"}`
+        )
+        .join("\n\n")
+    : "（目前沒有待還款信用卡）";
+
+  return [
+    `📋 【FinPulse】信用卡還款清單 (${today()})`,
+    divider,
+    `💰 待還總金額：HK$${formattedAmount(totalAmount)}`,
+    `💳 待還卡數：${unpaidCards.length} 張`,
+    "",
+    "▼ 明細清單：",
+    details,
+    divider,
+    "請記得按時還款，避免逾期利息！❤️",
+  ].join("\n");
+};
 
 const getGoogleCalendarUrl = (card) => {
   const dueDate = card.dueDate || "";
@@ -841,78 +891,29 @@ const comparisonYears = useMemo(() => {
 }, [comparisonMonth, historicalData]);
 
 const fileInputRef = useRef(null);
+const [repaymentListCopied, setRepaymentListCopied] = useState(false);
 
-const exportCalendar = () => {
-  const escapeICSText = (value) =>
-    String(value ?? "")
-      .replace(/\\/g, "\\\\")
-      .replace(/\r?\n/g, "\\n")
-      .replace(/;/g, "\\;")
-      .replace(/,/g, "\\,");
-  const calendarDate = (date) => date.replaceAll("-", "");
-  const events = cards.flatMap((card) => {
-    const dueDate = card.dueDate || "";
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) return [];
-
-    const start = new Date(`${dueDate}T00:00:00Z`);
-    if (
-      Number.isNaN(start.getTime()) ||
-      start.toISOString().slice(0, 10) !== dueDate
-    ) {
-      return [];
+const copyRepaymentList = async () => {
+  const repaymentText = generateRepaymentText(cards);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(repaymentText);
+    } else {
+      const textArea = document.createElement("textarea");
+      textArea.value = repaymentText;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      const copied = document.execCommand("copy");
+      textArea.remove();
+      if (!copied) throw new Error("Clipboard copy failed");
     }
-
-    const end = new Date(start);
-    end.setUTCDate(end.getUTCDate() + 1);
-    const amount = Number(card.paymentAmount || 0).toLocaleString("en-HK", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
-    const cardLabel = [card.bank, card.name].filter(Boolean).join(" ");
-    const summary = `信用卡還款｜${cardLabel}｜HK$${amount}`;
-    const description = [
-      `發卡銀行：${card.bank || "未設定"}`,
-      `卡片：${card.name || "信用卡"}`,
-      `還款金額：HK$${amount}`,
-    ].join("\n");
-    const uid = `${String(card.id || createId("card")).replace(/[^A-Za-z0-9-]/g, "")}-${calendarDate(dueDate)}@finpulse.local`;
-
-    return [[
-      "BEGIN:VEVENT",
-      `UID:${uid}`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")}`,
-      `DTSTART;VALUE=DATE:${calendarDate(dueDate)}`,
-      `DTEND;VALUE=DATE:${calendarDate(end.toISOString().slice(0, 10))}`,
-      `SUMMARY:${escapeICSText(summary)}`,
-      `DESCRIPTION:${escapeICSText(description)}`,
-      "END:VEVENT",
-    ].join("\r\n")];
-  });
-
-  if (events.length === 0) {
-    window.alert("沒有設定有效還款日期的信用卡，請先設定還款日期再匯出日曆。");
-    return;
+    setRepaymentListCopied(true);
+  } catch (error) {
+    console.error("Failed to copy repayment list:", error);
+    window.alert("無法複製還款清單，請確認瀏覽器剪貼簿權限後重試。");
   }
-
-  const calendarContent = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//FinPulse//Credit Card Payments//ZH-HK",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    ...events,
-    "END:VCALENDAR",
-  ].join("\r\n");
-  const fileUrl = URL.createObjectURL(
-    new Blob([calendarContent], { type: "text/calendar;charset=utf-8" })
-  );
-  const downloadLink = document.createElement("a");
-  downloadLink.href = fileUrl;
-  downloadLink.download = `finpulse-card-due-${today()}.ics`;
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  downloadLink.remove();
-  window.setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
 };
 
 const archiveCurrentMonth = () => {
@@ -1447,8 +1448,9 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             {archiveComplete ? "已成功封存" : "一按封存當月數據"}
           </Button>
 
-          <Button variant="export" onClick={exportCalendar} className="text-xs">
-            匯出日曆
+          <Button variant="export" onClick={copyRepaymentList} className="text-xs">
+            <Copy size={14} />
+            {repaymentListCopied ? "已複製清單" : "複製還款清單 (.txt)"}
           </Button>
           <Button
             variant="import"
