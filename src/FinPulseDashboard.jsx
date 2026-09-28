@@ -301,13 +301,13 @@ function Button({ children, variant = "ghost", className = "", ...props }) {
     secondary:
       "bg-gradient-to-b from-slate-600 to-slate-800 hover:from-slate-500 hover:to-slate-700 text-slate-100 border border-slate-400/30 shadow-md shadow-black/20 hover:shadow-[0_0_20px_rgba(148,163,184,0.25)]",
     archive:
-      "bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/35 shadow-md shadow-emerald-950/20 hover:shadow-[0_0_20px_rgba(52,211,153,0.3)]",
+      "bg-gradient-to-r from-emerald-400 to-green-500 hover:from-emerald-300 hover:to-green-400 text-emerald-950 font-bold border border-emerald-300/70 shadow-lg shadow-emerald-500/30 hover:shadow-[0_0_24px_rgba(52,211,153,0.55)]",
     export:
-      "bg-gradient-to-r from-indigo-500/20 via-violet-500/20 to-blue-500/20 hover:from-indigo-500/35 hover:via-violet-500/35 hover:to-blue-500/35 text-indigo-200 border border-violet-400/35 shadow-md shadow-indigo-950/20 hover:shadow-[0_0_20px_rgba(139,92,246,0.35)]",
+      "bg-gradient-to-r from-violet-500 via-fuchsia-500 to-purple-600 hover:from-violet-400 hover:via-fuchsia-400 hover:to-purple-500 text-white font-bold border border-fuchsia-300/70 shadow-lg shadow-fuchsia-600/30 hover:shadow-[0_0_24px_rgba(217,70,239,0.55)]",
     import:
-      "bg-gradient-to-r from-cyan-500/20 to-sky-500/20 hover:from-cyan-500/35 hover:to-sky-500/35 text-sky-200 border border-cyan-400/35 shadow-md shadow-cyan-950/20 hover:shadow-[0_0_20px_rgba(56,189,248,0.35)]",
+      "bg-gradient-to-r from-cyan-400 via-sky-500 to-blue-600 hover:from-cyan-300 hover:via-sky-400 hover:to-blue-500 text-white font-bold border border-cyan-200/70 shadow-lg shadow-sky-500/30 hover:shadow-[0_0_24px_rgba(56,189,248,0.55)]",
     logout:
-      "bg-slate-800/80 hover:bg-rose-500/20 text-slate-300 hover:text-rose-200 border border-slate-600/70 hover:border-rose-400/50 shadow-md shadow-black/20 hover:shadow-[0_0_20px_rgba(251,113,133,0.25)]",
+      "bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500 text-white font-bold border border-rose-300/70 shadow-lg shadow-rose-600/30 hover:shadow-[0_0_24px_rgba(251,113,133,0.55)]",
     complete:
       "bg-emerald-500/10 text-emerald-300 border border-emerald-400/30 cursor-default",
     danger:
