@@ -1321,7 +1321,11 @@ event.preventDefault();
 if (!editingTx?.description || !editingTx.amount) return;
 const next = transactions.map((transaction) =>
   transaction.id === editingTx.id
-    ? { ...editingTx, amount: Number(editingTx.amount) || 0 }
+    ? {
+        ...editingTx,
+        amount: Number(editingTx.amount) || 0,
+        refundAmount: Number(editingTx.refundAmount) || 0,
+      }
     : transaction
 );
 setTransactions(next);
@@ -2222,112 +2226,157 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           {transactions.length === 0 ? (
             <Empty>未有任何交易紀錄</Empty>
           ) : (
-            <div className="divide-y divide-slate-800/60">
-              {transactions.map((tx) => (
-                <div key={tx.id} className="py-3">
-                  {editingTx?.id === tx.id ? (
-                    <form onSubmit={handleSaveTx} className="grid grid-cols-1 gap-3 rounded-lg border border-cyan-500/30 bg-slate-950/50 p-3 sm:grid-cols-2 lg:grid-cols-6">
-                      <Field label="日期">
-                        <input
-                          type="date"
-                          className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
-                          value={editingTx.date}
-                          onChange={(event) => setEditingTx({ ...editingTx, date: event.target.value })}
-                        />
-                      </Field>
-                      <Field label="說明 / 商家">
-                        <input
-                          type="text"
-                          className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
-                          value={editingTx.description}
-                          onChange={(event) => setEditingTx({ ...editingTx, description: event.target.value })}
-                        />
-                      </Field>
-                      <Field label="金額">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
-                          value={editingTx.amount}
-                          onChange={(event) => setEditingTx({ ...editingTx, amount: event.target.value })}
-                        />
-                      </Field>
-                      <Field label="類別">
-                        <select
-                          className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
-                          value={editingTx.category}
-                          onChange={(event) => setEditingTx({ ...editingTx, category: event.target.value })}
-                        >
-                          {!CATEGORIES.includes(editingTx.category) && (
-                            <option value={editingTx.category}>{editingTx.category}</option>
-                          )}
-                          {CATEGORIES.map((category) => (
-                            <option key={category} value={category}>{category}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="信用卡">
-                        <select
-                          className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
-                          value={editingTx.cardId || (editingTx.cardName ? `imported:${editingTx.cardName}` : "")}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            if (value.startsWith("imported:")) return;
-                            setEditingTx({
-                              ...editingTx,
-                              cardId: value,
-                              cardName: "",
-                            });
-                          }}
-                        >
-                          <option value="">現金 / 未指定</option>
-                          {!editingTx.cardId && editingTx.cardName && (
-                            <option value={`imported:${editingTx.cardName}`}>{editingTx.cardName}</option>
-                          )}
-                          {cards.map((card) => (
-                            <option key={card.id} value={card.id}>{card.bank} - {card.name}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <div className="flex items-end gap-2">
-                        <Button variant="primary" type="submit" className="flex-1 px-3">儲存</Button>
-                        <Button variant="secondary" type="button" onClick={() => setEditingTx(null)} className="px-3">取消</Button>
-                      </div>
-                    </form>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-white">
-                          {tx.description}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          {tx.date} · {tx.category} · {cardNameById.get(tx.cardId) || tx.cardName || "現金 / 未指定"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="font-bold text-rose-400">
-                          {money(tx.amount)}
-                        </span>
-                        <button
-                          onClick={() => setEditingTx({ ...tx, amount: String(tx.amount) })}
-                          className="text-slate-500 hover:text-cyan-400 cursor-pointer"
-                          aria-label={`修改 ${tx.description}`}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTx(tx.id)}
-                          className="text-slate-500 hover:text-rose-400 cursor-pointer"
-                          aria-label={`刪除 ${tx.description}`}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="min-w-[980px] w-full table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-32" />
+                  <col className="w-[24%]" />
+                  <col className="w-36" />
+                  <col className="w-48" />
+                  <col className="w-36" />
+                  <col className="w-36" />
+                  <col className="w-28" />
+                </colgroup>
+                <thead className="bg-slate-950/80 text-xs uppercase tracking-wide text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">日期</th>
+                    <th className="px-4 py-3 font-medium">說明 / 商家</th>
+                    <th className="px-4 py-3 font-medium">類別</th>
+                    <th className="px-4 py-3 font-medium">支付方式</th>
+                    <th className="px-4 py-3 text-right font-medium">簽帳金額</th>
+                    <th className="px-4 py-3 text-right font-medium">退款/繳款</th>
+                    <th className="px-4 py-3 text-right font-medium">操作</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {transactions.map((tx) => {
+                    const refundAmount = Number(
+                      tx.refundAmount ?? tx.refund ?? tx.paymentAmount ?? 0
+                    );
+                    const paymentMethod =
+                      cardNameById.get(tx.cardId) || tx.cardName || "現金 / 未指定";
+
+                    return editingTx?.id === tx.id ? (
+                      <tr key={tx.id} className="bg-cyan-950/20">
+                        <td colSpan={7} className="p-4">
+                          <form onSubmit={handleSaveTx} className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:grid-cols-7">
+                            <Field label="日期">
+                              <input
+                                type="date"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
+                                value={editingTx.date}
+                                onChange={(event) => setEditingTx({ ...editingTx, date: event.target.value })}
+                              />
+                            </Field>
+                            <Field label="說明 / 商家">
+                              <input
+                                type="text"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
+                                value={editingTx.description}
+                                onChange={(event) => setEditingTx({ ...editingTx, description: event.target.value })}
+                              />
+                            </Field>
+                            <Field label="類別">
+                              <select
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
+                                value={editingTx.category}
+                                onChange={(event) => setEditingTx({ ...editingTx, category: event.target.value })}
+                              >
+                                {!CATEGORIES.includes(editingTx.category) && (
+                                  <option value={editingTx.category}>{editingTx.category}</option>
+                                )}
+                                {CATEGORIES.map((category) => (
+                                  <option key={category} value={category}>{category}</option>
+                                ))}
+                              </select>
+                            </Field>
+                            <Field label="支付方式">
+                              <select
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
+                                value={editingTx.cardId || (editingTx.cardName ? `imported:${editingTx.cardName}` : "")}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  if (value.startsWith("imported:")) return;
+                                  setEditingTx({ ...editingTx, cardId: value, cardName: "" });
+                                }}
+                              >
+                                <option value="">現金 / 未指定</option>
+                                {!editingTx.cardId && editingTx.cardName && (
+                                  <option value={`imported:${editingTx.cardName}`}>{editingTx.cardName}</option>
+                                )}
+                                {cards.map((card) => (
+                                  <option key={card.id} value={card.id}>{card.bank} - {card.name}</option>
+                                ))}
+                              </select>
+                            </Field>
+                            <Field label="簽帳金額">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-cyan-500"
+                                value={editingTx.amount}
+                                onChange={(event) => setEditingTx({ ...editingTx, amount: event.target.value })}
+                              />
+                            </Field>
+                            <Field label="退款/繳款">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-white outline-none focus:border-emerald-500"
+                                value={editingTx.refundAmount ?? editingTx.refund ?? editingTx.paymentAmount ?? ""}
+                                onChange={(event) => setEditingTx({ ...editingTx, refundAmount: event.target.value })}
+                              />
+                            </Field>
+                            <div className="flex items-end gap-2">
+                              <Button variant="primary" type="submit" className="flex-1 px-3">儲存</Button>
+                              <Button variant="secondary" type="button" onClick={() => setEditingTx(null)} className="px-3">取消</Button>
+                            </div>
+                          </form>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={tx.id} className="transition-colors hover:bg-slate-800/35">
+                        <td className="whitespace-nowrap px-4 py-4 text-slate-300">{tx.date}</td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="break-words font-bold text-white">{tx.description}</div>
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <span className="inline-flex max-w-full items-center rounded-full border border-cyan-300/30 bg-cyan-400/10 px-2.5 py-1 text-xs font-medium text-cyan-200">
+                            <span className="truncate">{tx.category}</span>
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 align-top text-slate-300">{paymentMethod}</td>
+                        <td className="whitespace-nowrap px-4 py-4 text-right align-top font-bold text-rose-400">{money(tx.amount)}</td>
+                        <td className="whitespace-nowrap px-4 py-4 text-right align-top font-semibold text-emerald-400">{money(Number.isFinite(refundAmount) ? refundAmount : 0)}</td>
+                        <td className="px-4 py-4 align-top">
+                          <div className="flex justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditingTx({ ...tx, amount: String(tx.amount), refundAmount: String(Number.isFinite(refundAmount) ? refundAmount : 0) })}
+                              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-cyan-400/15 hover:text-cyan-300"
+                              aria-label={`修改 ${tx.description}`}
+                              title="修改交易"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTx(tx.id)}
+                              className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-400/15 hover:text-rose-300"
+                              aria-label={`刪除 ${tx.description}`}
+                              title="刪除交易"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </Glass>
