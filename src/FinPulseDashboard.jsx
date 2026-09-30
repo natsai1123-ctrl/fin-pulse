@@ -1261,6 +1261,30 @@ setAdvisorStatus("loading");
 setAdvisorResponse("");
 try {
   const client = new GoogleGenAI({ apiKey });
+  const archivedFinancialData = historicalData.map((archive) => ({
+    yearMonth: archive.yearMonth || "",
+    archivedAt: archive.archivedAt || "",
+    transactions: Array.isArray(archive.transactions)
+      ? archive.transactions.map(({ id, date, description, amount, category, cardId, cardName, refundAmount }) => ({
+          id,
+          date,
+          description,
+          amount,
+          category,
+          cardId,
+          cardName,
+          refundAmount,
+        }))
+      : [],
+    incomes: Array.isArray(archive.incomes)
+      ? archive.incomes.map(({ id, date, source, amount }) => ({
+          id,
+          date,
+          source,
+          amount,
+        }))
+      : [],
+  }));
   const financialSnapshot = {
     totalIncome,
     totalExpense,
@@ -1274,10 +1298,21 @@ try {
       category,
       date,
     })),
+    historicalData: archivedFinancialData,
   };
   const response = await client.models.generateContent({
     model: "gemini-2.5-flash",
-    contents: `你是香港個人理財顧問。根據以下財務快照，以繁體中文提供清晰、可行且審慎的建議。不要提供投資保證，並在適當情況下提醒用戶諮詢持牌專業人士。\n\n財務快照：${JSON.stringify(financialSnapshot)}\n\n用戶問題：${advisorPrompt || "請分析我的財務狀況並提供三項優先行動。"}`,
+    contents: `你是香港個人理財顧問。根據以下財務快照，以繁體中文提供清晰、可行且審慎的建議。不要提供投資保證，並在適當情況下提醒用戶諮詢持牌專業人士。
+
+分析規則：
+1. historicalData 是已封存資料，請先按每筆記錄的 date 搜尋，再使用 yearMonth 作為封存月份參考。
+2. 回答日期範圍時，必須使用包含開始日及結束日的完整日期篩選；跨年度範圍不可只按年份或封存月份估算。
+3. 用戶查詢稅項時，優先計算 category 為「稅」的交易；如描述明確表示稅項，也可納入並說明判斷依據。列出計算公式、涵蓋日期及相關記錄，避免遺漏或重複計算。
+4. 如歷史資料不足或某筆記錄沒有有效日期，清楚指出限制，不要自行捏造數字。
+
+財務快照：${JSON.stringify(financialSnapshot)}
+
+用戶問題：${advisorPrompt || "請分析我的財務狀況並提供三項優先行動。"}`,
   });
   setAdvisorResponse(response.text || "未能產生建議，請稍後再試。");
   setAdvisorStatus("success");
@@ -2242,7 +2277,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                     <th className="px-4 py-3 font-medium">日期</th>
                     <th className="px-4 py-3 font-medium">說明 / 商家</th>
                     <th className="px-4 py-3 font-medium">類別</th>
-                    <th className="px-4 py-3 font-medium">支付方式</th>
+                    <th className="px-4 py-3 font-medium">信用卡</th>
                     <th className="px-4 py-3 text-right font-medium">簽帳金額</th>
                     <th className="px-4 py-3 text-right font-medium">退款/繳款</th>
                     <th className="px-4 py-3 text-right font-medium">操作</th>
