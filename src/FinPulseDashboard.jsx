@@ -26,6 +26,8 @@ import {
   Siren,
   TriangleAlert,
   Trash2,
+  Expand,
+  X,
   Zap,
   Wallet,
 } from "lucide-react";
@@ -394,10 +396,11 @@ const fromStorage = (key) => {
   }
 };
 
-function Glass({ children, className = "" }) {
+function Glass({ children, className = "", ...props }) {
   return (
     <section
       className={`min-w-0 rounded-xl border border-slate-300/25 bg-gradient-to-br from-slate-600/45 via-slate-800/75 to-slate-950/90 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_14px_30px_rgba(0,0,0,0.38)] backdrop-blur-2xl transition-all duration-300 hover:border-cyan-300/50 ${className}`}
+      {...props}
     >
       {children}
     </section>
@@ -460,6 +463,8 @@ export default function FinPulseDashboard({ onArchiveSuccess = () => {} }) {
 const [tab, setTab] = useState("overview");
 const [archiveComplete, setArchiveComplete] = useState(false);
 const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
+const [categoryChartOpen, setCategoryChartOpen] = useState(false);
+const categoryChartTriggerRef = useRef(null);
 const [archiveMonth, setArchiveMonth] = useState("");
 const [archiveMonthError, setArchiveMonthError] = useState("");
 const [historicalData, setHistoricalData] = useState(() => {
@@ -536,6 +541,29 @@ date: today(),
 });
 const [newMemo, setNewMemo] = useState("");
 const [editingTx, setEditingTx] = useState(null);
+
+const closeCategoryChart = () => {
+  setCategoryChartOpen(false);
+  categoryChartTriggerRef.current?.focus();
+};
+
+useEffect(() => {
+  if (!categoryChartOpen) return;
+
+  const previousOverflow = document.body.style.overflow;
+  const closeOnEscape = (event) => {
+    if (event.key !== "Escape") return;
+    setCategoryChartOpen(false);
+    categoryChartTriggerRef.current?.focus();
+  };
+
+  document.body.style.overflow = "hidden";
+  window.addEventListener("keydown", closeOnEscape);
+  return () => {
+    document.body.style.overflow = previousOverflow;
+    window.removeEventListener("keydown", closeOnEscape);
+  };
+}, [categoryChartOpen]);
 
 // Firebase Auth 狀態變更監聽
 useEffect(() => {
@@ -636,6 +664,7 @@ const categoryPieData = useMemo(() => {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 }, [transactions]);
+const categoryPieTotal = categoryPieData.reduce((sum, entry) => sum + entry.value, 0);
 
 const monthlyNetData = useMemo(() => {
   const monthMap = new Map();
@@ -700,17 +729,6 @@ const categoryBreakdownData = useMemo(() => {
     .sort((a, b) => b.value - a.value)
     .slice(0, 6);
 }, [transactions]);
-
-const loanPerformanceData = useMemo(
-  () =>
-    loanListWithMetrics.map((item) => ({
-      bank: item.bank,
-      principal: Number(item.principal || 0),
-      apr: Number.isFinite(item.apr) && item.apr >= 0 ? item.apr : 0,
-      month: Number(item.months || 0),
-    })),
-  [loanListWithMetrics]
-);
 
 const averageMonthlyIncome = useMemo(
   () => (incomes.length ? totalIncome / incomes.length : 0),
@@ -1603,6 +1621,101 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       </div>
     )}
 
+    {categoryChartOpen && (
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-0 backdrop-blur-md sm:p-4"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeCategoryChart();
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="category-chart-dialog-title"
+          className="flex h-full max-h-full w-full max-w-7xl flex-col overflow-hidden border border-slate-400/25 bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:rounded-2xl"
+        >
+          <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-700/80 px-4 py-3 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <PieIcon size={20} className="shrink-0 text-cyan-300" />
+              <div className="min-w-0">
+                <h2 id="category-chart-dialog-title" className="truncate text-lg font-bold text-white">
+                  開支類別分佈
+                </h2>
+                <p className="text-xs text-slate-400">
+                  總開支 {money(categoryPieTotal)} · {categoryPieData.length} 個類別
+                </p>
+              </div>
+            </div>
+            <button
+              autoFocus
+              type="button"
+              onClick={closeCategoryChart}
+              aria-label="關閉全螢幕檢視"
+              title="關閉全螢幕檢視"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-700 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
+            >
+              <X size={20} />
+            </button>
+          </header>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1.6fr)_minmax(300px,0.8fr)]">
+            <div className="h-[58vh] min-h-[320px] p-2 sm:min-h-[420px] sm:p-4 lg:h-auto lg:min-h-[min(72vh,720px)]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart margin={{ top: 36, right: 64, bottom: 36, left: 64 }}>
+                  <Pie
+                    data={categoryPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius="58%"
+                    label={({ name, percent }) =>
+                      `${name} ${(Number(percent) * 100).toFixed(2)}%`
+                    }
+                  >
+                    {categoryPieData.map((entry, index) => (
+                      <Cell
+                        key={`expanded-cell-${entry.name}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => money(value)} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <aside className="border-t border-slate-700/80 p-4 sm:p-6 lg:border-l lg:border-t-0">
+              <h3 className="mb-3 text-sm font-semibold text-slate-200">類別明細</h3>
+              <ul className="divide-y divide-slate-800/80">
+                {categoryPieData.map((entry, index) => {
+                  const percentage = categoryPieTotal > 0
+                    ? (entry.value / categoryPieTotal) * 100
+                    : 0;
+                  return (
+                    <li key={entry.name} className="flex items-center gap-3 py-3">
+                      <span
+                        aria-hidden="true"
+                        className="h-3 w-3 shrink-0 rounded-sm"
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-white">{entry.name}</span>
+                        <span className="text-xs text-slate-400">{percentage.toFixed(2)}%</span>
+                      </span>
+                      <strong className="shrink-0 text-sm font-semibold text-slate-100">
+                        {money(entry.value)}
+                      </strong>
+                    </li>
+                  );
+                })}
+              </ul>
+            </aside>
+          </div>
+        </section>
+      </div>
+    )}
+
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
     {/* ====== 導航選單 ====== */}
     <nav className="flex w-full items-center gap-2 overflow-x-auto border-b border-slate-500/25 pb-3">
@@ -1663,8 +1776,26 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
                 <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[0.92fr_1.5fr]">
                   <div className="space-y-4">
-                    <Glass className="relative z-0 origin-center p-4 hover:z-20 hover:scale-[1.15]">
-                      <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-white"><PieIcon size={18} className="text-cyan-300" />開支類別分佈</h3>
+                    <Glass
+                      ref={categoryChartTriggerRef}
+                      role="button"
+                      tabIndex={0}
+                      aria-haspopup="dialog"
+                      aria-expanded={categoryChartOpen}
+                      aria-label="開支類別分佈，開啟全螢幕檢視"
+                      title="開啟全螢幕檢視"
+                      onClick={() => setCategoryChartOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        setCategoryChartOpen(true);
+                      }}
+                      className="relative z-0 origin-center cursor-zoom-in p-4 hover:z-20 hover:scale-[1.15] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-400"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <h3 className="flex items-center gap-2 text-base font-bold text-white"><PieIcon size={18} className="text-cyan-300" />開支類別分佈</h3>
+                        <Expand size={16} aria-hidden="true" className="shrink-0 text-slate-400" />
+                      </div>
                       {categoryPieData.length === 0 ? <Empty>暫無交易資料以製作圖表</Empty> : (
                         <div className="h-60">
                           <ResponsiveContainer width="100%" height="100%">
@@ -1689,22 +1820,6 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       )}
                     </Glass>
 
-                    <Glass className="p-4">
-                      <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-white"><Receipt size={18} className="text-cyan-300" />最新交易預覽</h3>
-                      {transactions.length === 0 ? <Empty>暫無交易紀錄</Empty> : (
-                        <div className="space-y-2">
-                          {transactions.slice(0, 5).map((tx) => (
-                            <div key={tx.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-300/20 bg-slate-950/45 px-3 py-2.5">
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-white">{tx.description}</div>
-                                <span className="text-xs text-slate-300">{tx.date} · {tx.category}</span>
-                              </div>
-                              <span className="shrink-0 text-sm font-bold text-rose-300">{money(tx.amount)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </Glass>
                   </div>
 
                   <div className="space-y-4">
@@ -1738,7 +1853,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       </div>
                     </Glass>
 
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4">
                       <Glass className="p-4">
                         <h3 className="mb-2 text-sm font-bold text-white">支出類別排行</h3>
                         <div className="h-52">
@@ -1757,23 +1872,6 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                         </div>
                       </Glass>
 
-                      <Glass className="p-4">
-                        <h3 className="mb-2 text-sm font-bold text-white">貸款 APR 比較</h3>
-                        <div className="h-52">
-                          <ResponsiveContainer width="100%" height="100%">
-                            <LineChart key={loanPerformanceData.length} data={loanPerformanceData} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
-                              <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
-                              <XAxis dataKey="bank" tick={{ fill: "#cbd5e1", fontSize: 9 }} />
-                              <YAxis
-                                tick={{ fill: "#cbd5e1", fontSize: 10 }}
-                                tickFormatter={formatAPR}
-                              />
-                              <Tooltip formatter={formatAPR} />
-                              <Line type="monotone" dataKey="apr" stroke="#fbbf24" strokeWidth={3} dot={{ r: 3 }} />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </div>
-                      </Glass>
                     </div>
                   </div>
                 </div>
