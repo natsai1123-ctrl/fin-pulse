@@ -1663,10 +1663,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
                 <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[0.92fr_1.5fr]">
                   <div className="space-y-4">
-                    <Glass className="p-4">
+                    <Glass className="relative z-0 origin-center p-4 hover:z-20 hover:scale-[1.15]">
                       <h3 className="mb-3 flex items-center gap-2 text-base font-bold text-white"><PieIcon size={18} className="text-cyan-300" />開支類別分佈</h3>
                       {categoryPieData.length === 0 ? <Empty>暫無交易資料以製作圖表</Empty> : (
-                        <div className="relative z-0 h-60 origin-center transition-transform duration-300 ease-out hover:z-10 hover:scale-105">
+                        <div className="h-60">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
