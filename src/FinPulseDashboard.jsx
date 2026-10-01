@@ -1493,7 +1493,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             className="whitespace-nowrap rounded-xl px-4 py-2 text-xs"
           >
             <Archive size={15} />
-            {archiveComplete ? "已成功封存" : "一按封存當月數據"}
+            {archiveComplete ? "已成功封存" : "封存當月數據"}
           </Button>
 
           <Button variant="secondary" onClick={handleManualSave} className="whitespace-nowrap text-xs">
@@ -1502,7 +1502,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 
           <Button variant="export" onClick={copyRepaymentList} className="text-xs">
             <Copy size={14} />
-            {repaymentListCopied ? "已複製清單" : "複製還款清單 (.txt)"}
+            {repaymentListCopied ? "已複製還款清單" : "複製還款清單"}
           </Button>
           <Button
             variant="import"
