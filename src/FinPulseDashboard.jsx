@@ -165,10 +165,14 @@ cardBg:
 },
 ];
 
-const money = (value) =>
-  `HK$${Math.abs(Number(value || 0)).toLocaleString("en-HK", {
-    maximumFractionDigits: 2,
-  })}`;
+const money = (value) => {
+  const numericValue = Number(value || 0);
+  const [whole, fraction] = (Number.isFinite(numericValue)
+    ? Math.abs(numericValue)
+    : 0
+  ).toFixed(2).split(".");
+  return `HK$${Number(whole).toLocaleString("en-HK")}.${fraction}`;
+};
 
 const formatAPR = (value) => {
   const apr = Number(value);
@@ -310,10 +314,7 @@ const generateRepaymentText = (cards) => {
     0
   );
   const formattedAmount = (amount) =>
-    amount.toLocaleString("en-HK", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
+    Number(amount).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const divider = "-".repeat(40);
   const details = unpaidCards.length
     ? unpaidCards
@@ -1668,7 +1669,17 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                         <div className="h-60">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
-                              <Pie data={categoryPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={78} label>
+                              <Pie
+                                data={categoryPieData}
+                                dataKey="value"
+                                nameKey="name"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={78}
+                                label={({ name, value, percent }) =>
+                                  `${name}: ${money(value)} (${(Number(percent) * 100).toFixed(2)}%)`
+                                }
+                              >
                                 {categoryPieData.map((entry, index) => <Cell key={`cell-${entry.name}`} fill={COLORS[index % COLORS.length]} />)}
                               </Pie>
                               <Tooltip formatter={(value) => money(value)} />
@@ -1715,7 +1726,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                             </defs>
                             <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
                             <XAxis dataKey="month" tick={{ fill: "#cbd5e1", fontSize: 11 }} />
-                            <YAxis tick={{ fill: "#cbd5e1", fontSize: 11 }} />
+                            <YAxis
+                              tick={{ fill: "#cbd5e1", fontSize: 11 }}
+                              tickFormatter={(value) => Number(value).toFixed(2)}
+                            />
                             <Tooltip formatter={(value) => money(value)} />
                             <Area type="monotone" dataKey="income" stroke="#34d399" fill="url(#incomeFill)" strokeWidth={2} />
                             <Area type="monotone" dataKey="expense" stroke="#fb7185" fill="url(#expenseFill)" strokeWidth={2} />
@@ -1732,7 +1746,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                             <BarChart data={categoryBreakdownData} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
                               <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
                               <XAxis dataKey="name" tick={{ fill: "#cbd5e1", fontSize: 10 }} />
-                              <YAxis tick={{ fill: "#cbd5e1", fontSize: 10 }} />
+                              <YAxis
+                                tick={{ fill: "#cbd5e1", fontSize: 10 }}
+                                tickFormatter={(value) => Number(value).toFixed(2)}
+                              />
                               <Tooltip formatter={(value) => money(value)} />
                               <Bar dataKey="value" radius={[5, 5, 0, 0]} fill="#22d3ee" />
                             </BarChart>
@@ -1747,7 +1764,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                             <LineChart key={loanPerformanceData.length} data={loanPerformanceData} margin={{ top: 8, right: 4, left: -22, bottom: 0 }}>
                               <CartesianGrid stroke="#64748b" strokeOpacity={0.35} strokeDasharray="3 3" />
                               <XAxis dataKey="bank" tick={{ fill: "#cbd5e1", fontSize: 9 }} />
-                              <YAxis tick={{ fill: "#cbd5e1", fontSize: 10 }} />
+                              <YAxis
+                                tick={{ fill: "#cbd5e1", fontSize: 10 }}
+                                tickFormatter={formatAPR}
+                              />
                               <Tooltip formatter={formatAPR} />
                               <Line type="monotone" dataKey="apr" stroke="#fbbf24" strokeWidth={3} dot={{ r: 3 }} />
                             </LineChart>
@@ -1856,7 +1876,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                         <TrendIcon size={14} />
                         {percentChange === null
                           ? currentValue > 0 ? "新紀錄" : "0.0%"
-                          : `${percentChange > 0 ? "+" : ""}${percentChange.toFixed(1)}%`}
+                          : `${percentChange > 0 ? "+" : ""}${percentChange.toFixed(2)}%`}
                       </>
                     ) : "尚無前期資料"}
                   </span>
@@ -1880,7 +1900,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                   <BarChart data={comparisonPeriod.chartData} barGap={12} margin={{ top: 12, right: 16, left: 8, bottom: 8 }}>
                     <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                     <XAxis dataKey="metric" tick={{ fill: "#cbd5e1", fontSize: 12 }} />
-                    <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} tickFormatter={(value) => `${Math.round(value / 1000)}k`} />
+                    <YAxis
+                      tick={{ fill: "#94a3b8", fontSize: 11 }}
+                      tickFormatter={(value) => `${(Number(value) / 1000).toFixed(2)}k`}
+                    />
                     <Tooltip formatter={(value) => money(value)} />
                     <Legend
                       align="center"
@@ -1926,8 +1949,8 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             <div className="text-2xl font-black text-emerald-400 mt-1">
               {Number.isFinite(loanForecastSummary.debtToIncomeRatio) &&
               loanForecastSummary.debtToIncomeRatio >= 0
-                ? `${loanForecastSummary.debtToIncomeRatio.toFixed(1)}%`
-                : "0.0%"}
+                ? `${loanForecastSummary.debtToIncomeRatio.toFixed(2)}%`
+                : "0.00%"}
             </div>
           </Glass>
         </div>
@@ -1940,7 +1963,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                 <BarChart key={loanComparisonData.length} data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
                   <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                   <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    tickFormatter={formatAPR}
+                  />
                   <Tooltip formatter={formatAPR} />
                   <Bar dataKey="apr" fill="#38bdf8" radius={[6, 6, 0, 0]} />
                 </BarChart>
@@ -1955,7 +1981,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                 <LineChart key={loanComparisonData.length} data={loanComparisonData} margin={{ top: 10, right: 10, left: -12, bottom: 0 }}>
                   <CartesianGrid stroke="#334155" strokeDasharray="3 3" />
                   <XAxis dataKey="bank" tick={{ fill: "#94a3b8", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                  <YAxis
+                    tick={{ fill: "#94a3b8", fontSize: 11 }}
+                    tickFormatter={(value) => money(value)}
+                  />
                   <Tooltip formatter={(value) => money(value)} />
                   <Line type="monotone" dataKey="monthlyPayment" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} />
                   <Line type="monotone" dataKey="totalRepayment" stroke="#f97316" strokeWidth={3} dot={{ r: 4 }} />
@@ -1994,8 +2023,8 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                       <td className="py-3 pr-4 text-right text-amber-300">{money(item.totalInterest)}</td>
                       <td className="py-3 pr-4 text-right text-emerald-400">
                         {Number.isFinite(item.budgetShare) && item.budgetShare >= 0
-                          ? `${item.budgetShare.toFixed(1)}%`
-                          : "0.0%"}
+                          ? `${item.budgetShare.toFixed(2)}%`
+                          : "0.00%"}
                       </td>
                     </tr>
                   ))}
