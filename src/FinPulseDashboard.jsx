@@ -20,6 +20,7 @@ import {
   Pencil,
   Plus,
   Receipt,
+  Save,
   Sparkles,
   ShieldCheck,
   Siren,
@@ -28,7 +29,6 @@ import {
   Zap,
   Wallet,
 } from "lucide-react";
-import { GoogleGenAI } from "@google/genai";
 import * as XLSX from "xlsx";
 import {
   Area,
@@ -74,6 +74,8 @@ const CATEGORIES = [
 "貸款",
 "其他",
 ];
+
+const INCOME_SOURCES = ["工資", "租金", "內地教育津貼", "同仁基金"];
 
 const BANKS = [
 "花旗銀行",
@@ -518,7 +520,7 @@ date: today(),
 cardId: "",
 });
 const [newIncome, setNewIncome] = useState({
-source: "",
+source: INCOME_SOURCES[0],
 amount: "",
 date: today(),
 });
@@ -533,9 +535,6 @@ date: today(),
 });
 const [newMemo, setNewMemo] = useState("");
 const [editingTx, setEditingTx] = useState(null);
-const [advisorPrompt, setAdvisorPrompt] = useState("");
-const [advisorResponse, setAdvisorResponse] = useState("");
-const [advisorStatus, setAdvisorStatus] = useState("idle");
 
 // Firebase Auth 狀態變更監聽
 useEffect(() => {
@@ -916,6 +915,37 @@ const copyRepaymentList = async () => {
   }
 };
 
+const handleManualSave = () => {
+  const dataToSave = new Map([
+    [STORAGE_KEY_CARDS, cards],
+    [STORAGE_KEY_TX, transactions],
+    [STORAGE_KEY_INCOME, incomes],
+    [STORAGE_KEY_LOANS, loans],
+    [STORAGE_KEY_LOAN_MEMOS, loanMemos],
+    [STORAGE_KEY_HISTORICAL_DATA, historicalData],
+  ]);
+  const originalValues = new Map();
+
+  try {
+    dataToSave.forEach((value, key) => {
+      originalValues.set(key, localStorage.getItem(key));
+      localStorage.setItem(key, JSON.stringify(value));
+    });
+    window.alert("所有資料已成功儲存到本機。")
+  } catch (error) {
+    console.error("Failed to save dashboard data:", error);
+    originalValues.forEach((value, key) => {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (restoreError) {
+        console.error("Failed to restore data after save error:", restoreError);
+      }
+    });
+    window.alert("手動儲存失敗，請檢查瀏覽器本機儲存空間後重試。")
+  }
+};
+
 const archiveCurrentMonth = () => {
   const yearMonth = archiveMonth.trim();
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(yearMonth)) {
@@ -1092,10 +1122,14 @@ const importWorkbook = async (event) => {
     const resolveCardId = (value) => {
       const cardReference = String(value || "").trim();
       if (!cardReference) return "";
-      return cards.find((card) =>
+      const matchedCard = [...cards, ...importedCards].find((card) =>
         [card.id, card.name, `${card.bank} ${card.name}`, `${card.bank} - ${card.name}`]
           .includes(cardReference)
-      )?.id || "";
+      );
+      if (!matchedCard) return "";
+      return cards.find((card) =>
+        card.bank === matchedCard.bank && card.name === matchedCard.name
+      )?.id || matchedCard.id || "";
     };
 
     const formatImportedDate = (value) => {
@@ -1109,6 +1143,31 @@ const importWorkbook = async (event) => {
         }
       }
       return value || today();
+    };
+
+    const mergeRecords = (existingRecords, importedRecords, getNaturalKey) => {
+      const seenIds = new Set(
+        existingRecords
+          .map((record) => record.id)
+          .filter((id) => id !== undefined && id !== null && id !== "")
+          .map(String)
+      );
+      const seenNaturalKeys = new Set(
+        existingRecords.map(getNaturalKey).filter(Boolean)
+      );
+
+      return [...existingRecords, ...importedRecords.filter((record) => {
+        const id = record.id === undefined || record.id === null || record.id === ""
+          ? ""
+          : String(record.id);
+        const naturalKey = getNaturalKey(record);
+        if ((id && seenIds.has(id)) || (naturalKey && seenNaturalKeys.has(naturalKey))) {
+          return false;
+        }
+        if (id) seenIds.add(id);
+        if (naturalKey) seenNaturalKeys.add(naturalKey);
+        return true;
+      })];
     };
 
     const importedCards = parseRows(["cards", "card", "信用卡"]).map((row) => ({
@@ -1167,11 +1226,35 @@ const importWorkbook = async (event) => {
       return;
     }
 
-    const nextCards = importedCards.length ? importedCards : cards;
-    const nextTransactions = importedTransactions.length ? importedTransactions : transactions;
-    const nextIncomes = importedIncomes.length ? importedIncomes : incomes;
-    const nextLoans = importedLoans.length ? importedLoans : loans;
-    const nextMemos = importedMemos.length ? importedMemos : loanMemos;
+    const nextCards = mergeRecords(cards, importedCards, (card) =>
+      JSON.stringify([card.bank, card.name])
+    );
+    const nextTransactions = mergeRecords(transactions, importedTransactions, (transaction) =>
+      JSON.stringify([
+        transaction.date,
+        transaction.description,
+        Number(transaction.amount || 0),
+        transaction.category,
+        transaction.cardId || transaction.cardName || "",
+      ])
+    );
+    const nextIncomes = mergeRecords(incomes, importedIncomes, (income) =>
+      JSON.stringify([income.date, income.source, Number(income.amount || 0)])
+    );
+    const nextLoans = mergeRecords(loans, importedLoans, (loan) =>
+      JSON.stringify([
+        loan.date,
+        loan.bank,
+        Number(loan.principal || 0),
+        Number(loan.monthlyPayment || 0),
+        Number(loan.months || 0),
+        Number(loan.upfrontFee || 0),
+        Number(loan.rebate || 0),
+      ])
+    );
+    const nextMemos = mergeRecords(loanMemos, importedMemos, (memo) =>
+      JSON.stringify([memo.date, memo.text])
+    );
 
     setArchiveComplete(false);
     setCards(nextCards);
@@ -1183,6 +1266,7 @@ const importWorkbook = async (event) => {
     localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(nextCards));
     localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(nextTransactions));
     localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(nextIncomes));
+    localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(nextLoans));
     localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(nextMemos));
     window.alert("匯入完成，資料已更新。")
   } catch (error) {
@@ -1248,81 +1332,6 @@ setCards(next);
 localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(next));
 };
 
-const handleAskAdvisor = async (event) => {
-event.preventDefault();
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-if (!apiKey) {
-  setAdvisorStatus("error");
-  setAdvisorResponse("請在 .env 設定 VITE_GEMINI_API_KEY，然後重新啟動開發伺服器。");
-  return;
-}
-
-setAdvisorStatus("loading");
-setAdvisorResponse("");
-try {
-  const client = new GoogleGenAI({ apiKey });
-  const archivedFinancialData = historicalData.map((archive) => ({
-    yearMonth: archive.yearMonth || "",
-    archivedAt: archive.archivedAt || "",
-    transactions: Array.isArray(archive.transactions)
-      ? archive.transactions.map(({ id, date, description, amount, category, cardId, cardName, refundAmount }) => ({
-          id,
-          date,
-          description,
-          amount,
-          category,
-          cardId,
-          cardName,
-          refundAmount,
-        }))
-      : [],
-    incomes: Array.isArray(archive.incomes)
-      ? archive.incomes.map(({ id, date, source, amount }) => ({
-          id,
-          date,
-          source,
-          amount,
-        }))
-      : [],
-  }));
-  const financialSnapshot = {
-    totalIncome,
-    totalExpense,
-    netBalance: totalIncome - totalExpense,
-    loanPrincipal: totalLoanPrincipal,
-    monthlyLoanPayment: loanForecastSummary.totalMonthlyPayment,
-    debtToIncomeRatio: loanForecastSummary.debtToIncomeRatio,
-    recentTransactions: transactions.slice(0, 10).map(({ description, amount, category, date }) => ({
-      description,
-      amount,
-      category,
-      date,
-    })),
-    historicalData: archivedFinancialData,
-  };
-  const response = await client.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: `你是香港個人理財顧問。根據以下財務快照，以繁體中文提供清晰、可行且審慎的建議。不要提供投資保證，並在適當情況下提醒用戶諮詢持牌專業人士。
-
-分析規則：
-1. historicalData 是已封存資料，請先按每筆記錄的 date 搜尋，再使用 yearMonth 作為封存月份參考。
-2. 回答日期範圍時，必須使用包含開始日及結束日的完整日期篩選；跨年度範圍不可只按年份或封存月份估算。
-3. 用戶查詢稅項時，優先計算 category 為「稅」的交易；如描述明確表示稅項，也可納入並說明判斷依據。列出計算公式、涵蓋日期及相關記錄，避免遺漏或重複計算。
-4. 如歷史資料不足或某筆記錄沒有有效日期，清楚指出限制，不要自行捏造數字。
-
-財務快照：${JSON.stringify(financialSnapshot)}
-
-用戶問題：${advisorPrompt || "請分析我的財務狀況並提供三項優先行動。"}`,
-  });
-  setAdvisorResponse(response.text || "未能產生建議，請稍後再試。");
-  setAdvisorStatus("success");
-} catch (error) {
-  console.error("Gemini advisor failed:", error);
-  setAdvisorStatus("error");
-  setAdvisorResponse("暫時未能取得 AI 建議，請檢查 API key、網絡連線及 Gemini API 配額。");
-}
-};
-
 // CRUD 處理：交易開支
 const handleAddTx = (e) => {
 e.preventDefault();
@@ -1381,7 +1390,7 @@ const next = [item, ...incomes];
 setArchiveComplete(false);
 setIncomes(next);
 localStorage.setItem(STORAGE_KEY_INCOME, JSON.stringify(next));
-setNewIncome({ source: "", amount: "", date: today() });
+setNewIncome({ source: INCOME_SOURCES[0], amount: "", date: today() });
 };
 
 const handleDeleteIncome = (id) => {
@@ -1485,6 +1494,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           >
             <Archive size={15} />
             {archiveComplete ? "已成功封存" : "一按封存當月數據"}
+          </Button>
+
+          <Button variant="secondary" onClick={handleManualSave} className="whitespace-nowrap text-xs">
+            <Save size={14} /> 手動儲存
           </Button>
 
           <Button variant="export" onClick={copyRepaymentList} className="text-xs">
@@ -1600,7 +1613,6 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
         { id: "transactions", label: "交易紀錄", icon: Receipt },
         { id: "income", label: "收入管理", icon: Wallet },
         { id: "loans", label: "貸款管理及備忘錄", icon: Landmark },
-        { id: "advisor", label: "AI 理財顧問", icon: Sparkles },
       ].map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -2428,15 +2440,19 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
           >
             <Field label="收入來源">
-              <input
-                type="text"
-                placeholder="如：月薪 / 投資回報"
+              <select
                 className="bg-slate-950 border border-slate-800 p-2.5 rounded-xl text-white outline-none focus:border-cyan-500"
                 value={newIncome.source}
                 onChange={(e) =>
                   setNewIncome({ ...newIncome, source: e.target.value })
                 }
-              />
+              >
+                {INCOME_SOURCES.map((source) => (
+                  <option key={source} value={source}>
+                    {source}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field label="收入日期">
               <input
@@ -2896,46 +2912,6 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       </div>
     )}
 
-    {tab === "advisor" && (
-      <div className="space-y-6">
-        <Glass className="p-6">
-          <div className="mb-6 flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-cyan-400 text-slate-950">
-              <Sparkles size={20} />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">Gemini AI 理財顧問</h2>
-              <p className="mt-1 text-sm text-slate-400">根據目前收支、信用卡與貸款資料提供個人化建議。</p>
-            </div>
-          </div>
-          <form onSubmit={handleAskAdvisor} className="space-y-4">
-            <label className="block text-sm text-slate-300">
-              <span className="mb-2 block text-xs font-medium text-slate-400">想詢問甚麼？</span>
-              <textarea
-                rows="4"
-                placeholder="例如：我應該優先償還哪筆貸款？如何減少本月開支？"
-                className="w-full resize-y rounded-lg border border-slate-800 bg-slate-950 p-3 text-white outline-none focus:border-cyan-500"
-                value={advisorPrompt}
-                onChange={(event) => setAdvisorPrompt(event.target.value)}
-              />
-            </label>
-            <Button variant="primary" type="submit" disabled={advisorStatus === "loading"}>
-              <Sparkles size={16} />
-              {advisorStatus === "loading" ? "正在分析..." : "取得理財建議"}
-            </Button>
-          </form>
-        </Glass>
-
-        {advisorResponse && (
-          <Glass className="p-6">
-            <h3 className="mb-3 text-base font-bold text-white">顧問建議</h3>
-            <p className={`whitespace-pre-wrap text-sm leading-7 ${advisorStatus === "error" ? "text-rose-300" : "text-slate-200"}`}>
-              {advisorResponse}
-            </p>
-          </Glass>
-        )}
-      </div>
-    )}
     </main>
   </div>
 
