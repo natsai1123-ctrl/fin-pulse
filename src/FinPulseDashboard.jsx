@@ -541,6 +541,9 @@ date: today(),
 });
 const [newMemo, setNewMemo] = useState("");
 const [editingTx, setEditingTx] = useState(null);
+const [searchQuery, setSearchQuery] = useState("");
+const [searchStartDate, setSearchStartDate] = useState("");
+const [searchEndDate, setSearchEndDate] = useState("");
 
 const closeCategoryChart = () => {
   setCategoryChartOpen(false);
@@ -620,6 +623,51 @@ const totalExpense = useMemo(
 transactions.reduce((sum, item) => sum + Number(item.amount || 0), 0),
 [transactions]
 );
+const globalSearchResults = useMemo(() => {
+  const liveTransactions = (Array.isArray(transactions) ? transactions : []).map(
+    (transaction) => ({ ...transaction, isArchived: false })
+  );
+  const archivedTransactions = historicalData.flatMap((archive) =>
+    (Array.isArray(archive.transactions) ? archive.transactions : []).map(
+      (transaction) => ({
+        ...transaction,
+        isArchived: true,
+        archiveMonth: archive.yearMonth,
+      })
+    )
+  );
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+
+  return [...liveTransactions, ...archivedTransactions].filter((transaction) => {
+    const description = String(transaction.description || "").toLocaleLowerCase();
+    const category = String(transaction.category || "").toLocaleLowerCase();
+    const transactionDate = String(transaction.date || "");
+
+    return (
+      (!normalizedQuery || description.includes(normalizedQuery) || category.includes(normalizedQuery)) &&
+      (!searchStartDate || transactionDate >= searchStartDate) &&
+      (!searchEndDate || transactionDate <= searchEndDate)
+    );
+  });
+}, [historicalData, searchEndDate, searchQuery, searchStartDate, transactions]);
+const searchTotals = useMemo(
+  () =>
+    globalSearchResults.reduce(
+      (totals, transaction) => {
+        const amount = Number(transaction.amount || 0);
+        const refund = Number(
+          transaction.refundAmount ?? transaction.refund ?? transaction.paymentAmount ?? 0
+        );
+        return {
+          totalAmount: totals.totalAmount + (Number.isFinite(amount) ? amount : 0),
+          totalRefund: totals.totalRefund + (Number.isFinite(refund) ? refund : 0),
+        };
+      },
+      { totalAmount: 0, totalRefund: 0 }
+    ),
+  [globalSearchResults]
+);
+const searchNetAmount = searchTotals.totalAmount - searchTotals.totalRefund;
 const totalLoanPrincipal = useMemo(
 () => loans.reduce((sum, item) => sum + Number(item.principal || 0), 0),
 [loans]
@@ -1722,6 +1770,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       {[
         { id: "overview", label: "財務總覽及報表", icon: LayoutDashboard },
         { id: "comparison", label: "歷史跨期對決", icon: Layers },
+        { id: "search", label: "🔍 智能歷史搜索", icon: Sparkles },
         { id: "analysis", label: "貸款分析", icon: Landmark },
         { id: "cards", label: "信用卡", icon: CreditCard },
         { id: "transactions", label: "交易紀錄", icon: Receipt },
@@ -1876,6 +1925,139 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                   </div>
                 </div>
               </div>
+    )}
+
+    {tab === "search" && (
+      <section className="space-y-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/30 bg-cyan-500/10 text-cyan-300">
+            <Sparkles size={22} />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-white">智能歷史搜索</h1>
+            <p className="mt-1 text-sm text-slate-400">搜尋活期及已封存交易紀錄</p>
+          </div>
+        </div>
+
+        <Glass className="p-5">
+          <div className="grid grid-cols-1 items-end gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Field label="關鍵字">
+              <input
+                type="search"
+                placeholder="搜尋說明或類別"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500"
+              />
+            </Field>
+            <Field label="開始日期">
+              <input
+                type="date"
+                value={searchStartDate}
+                onChange={(event) => setSearchStartDate(event.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
+              />
+            </Field>
+            <Field label="結束日期">
+              <input
+                type="date"
+                value={searchEndDate}
+                onChange={(event) => setSearchEndDate(event.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
+              />
+            </Field>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setSearchQuery("");
+                setSearchStartDate("");
+                setSearchEndDate("");
+              }}
+              className="w-full py-2.5"
+            >
+              重置篩選
+            </Button>
+          </div>
+        </Glass>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <Glass className="p-5">
+            <span className="text-sm font-medium text-slate-300">符合條件總支出</span>
+            <div className="mt-2 text-2xl font-black text-rose-300">
+              {money(searchTotals.totalAmount)}
+            </div>
+          </Glass>
+          <Glass className="p-5">
+            <span className="text-sm font-medium text-slate-300">符合條件總退款</span>
+            <div className="mt-2 text-2xl font-black text-emerald-300">
+              {money(searchTotals.totalRefund)}
+            </div>
+          </Glass>
+          <Glass className="p-5">
+            <span className="text-sm font-medium text-slate-300">淨實際支出</span>
+            <div className="mt-2 text-2xl font-black text-cyan-300">
+              {money(searchNetAmount)}
+            </div>
+          </Glass>
+        </div>
+
+        <Glass className="p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-lg font-bold text-white">搜索結果</h2>
+            <span className="text-xs text-slate-400">{globalSearchResults.length} 筆交易</span>
+          </div>
+          {globalSearchResults.length === 0 ? (
+            <Empty icon={Sparkles}>沒有符合條件的交易紀錄</Empty>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="min-w-[900px] w-full text-left text-sm">
+                <thead className="bg-slate-950/80 text-xs text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">日期</th>
+                    <th className="px-4 py-3 font-medium">說明 / 商家</th>
+                    <th className="px-4 py-3 font-medium">類別</th>
+                    <th className="px-4 py-3 font-medium">狀態</th>
+                    <th className="px-4 py-3 text-right font-medium">簽帳金額</th>
+                    <th className="px-4 py-3 text-right font-medium">退款/繳款</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/80">
+                  {globalSearchResults.map((transaction, index) => {
+                    const refundAmount = Number(
+                      transaction.refundAmount ?? transaction.refund ?? transaction.paymentAmount ?? 0
+                    );
+                    return (
+                      <tr key={transaction.id || `${transaction.date}-${transaction.description}-${index}`} className="transition-colors hover:bg-slate-800/35">
+                        <td className="whitespace-nowrap px-4 py-4 text-slate-300">{transaction.date || "-"}</td>
+                        <td className="px-4 py-4 font-bold text-white">{transaction.description || "-"}</td>
+                        <td className="px-4 py-4 text-slate-300">{transaction.category || "-"}</td>
+                        <td className="px-4 py-4">
+                          {transaction.isArchived ? (
+                            <span className="inline-flex whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-300">
+                              📦 已封存 ({transaction.archiveMonth})
+                            </span>
+                          ) : (
+                            <span className="inline-flex whitespace-nowrap rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-300">
+                              ⚡ 活期數據
+                            </span>
+                          )}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-rose-400">
+                          {money(transaction.amount)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-400">
+                          {money(Number.isFinite(refundAmount) ? refundAmount : 0)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Glass>
+      </section>
     )}
 
     {tab === "comparison" && (
