@@ -1520,6 +1520,10 @@ setLoanMemos(next);
 localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 };
 
+const handleDeleteAiMessage = (id) => {
+  setAiMessages((messages) => messages.filter((message) => message.id !== id));
+};
+
 const sendAiQuestion = async (question = aiQuestion) => {
   const text = question.trim();
   if (!text || isAiLoading) return;
@@ -1557,9 +1561,14 @@ const sendAiQuestion = async (question = aiQuestion) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: text, financialData }),
     });
-    const result = await response.json();
+    const result = await response.json().catch(() => null);
     if (!response.ok) {
-      throw new Error(result.error || "AI 分析服務暫時無法使用。");
+      throw new Error(
+        result?.error || `AI 分析服務回應錯誤（HTTP ${response.status}）。`
+      );
+    }
+    if (typeof result?.answer !== "string" || !result.answer.trim()) {
+      throw new Error("AI 分析服務回應格式不正確，請稍後再試。");
     }
 
     setAiMessages((messages) => [
@@ -1567,7 +1576,7 @@ const sendAiQuestion = async (question = aiQuestion) => {
       {
         id: createId("ai-answer"),
         role: "assistant",
-        content: result.answer || "AI 暫時未能提供答案，請稍後再試。",
+        content: result.answer.trim(),
       },
     ]);
   } catch (error) {
@@ -2097,13 +2106,30 @@ const sendAiQuestion = async (question = aiQuestion) => {
             {aiMessages.map((message) => (
               <div
                 key={message.id}
-                className={`max-w-[90%] rounded-xl border px-3 py-2 text-sm leading-6 ${
-                  message.role === "user"
-                    ? "ml-auto border-cyan-500/30 bg-cyan-950/50 text-cyan-100"
-                    : "border-slate-700 bg-slate-900 text-slate-200"
+                className={`flex items-start gap-2 ${
+                  message.role === "user" ? "flex-row-reverse" : ""
                 }`}
               >
-                {message.content}
+                <div
+                  className={`max-w-[90%] rounded-xl border px-3 py-2 text-sm leading-6 ${
+                    message.role === "user"
+                      ? "border-cyan-500/30 bg-cyan-950/50 text-cyan-100"
+                      : "border-slate-700 bg-slate-900 text-slate-200"
+                  }`}
+                >
+                  {message.content}
+                </div>
+                {message.id !== "welcome" && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteAiMessage(message.id)}
+                    aria-label={`刪除${message.role === "user" ? "問題" : "回答"}`}
+                    title="刪除此訊息"
+                    className="shrink-0 cursor-pointer rounded p-1 text-slate-500 transition-colors hover:text-rose-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
               </div>
             ))}
             {isAiLoading && (
