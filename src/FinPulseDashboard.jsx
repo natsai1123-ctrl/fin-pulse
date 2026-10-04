@@ -11,7 +11,6 @@ import {
   Copy,
   CreditCard,
   Database,
-  FileText,
   Landmark,
   Layers,
   LayoutDashboard,
@@ -369,16 +368,6 @@ const getGoogleCalendarUrl = (card) => {
   return `https://calendar.google.com/calendar/render?${parameters.toString()}`;
 };
 
-const formatMonthLabel = (dateValue) => {
-  if (!dateValue) return "-";
-  const date = new Date(dateValue);
-  if (Number.isNaN(date.getTime())) return dateValue;
-  return date.toLocaleDateString("zh-HK", {
-    year: "numeric",
-    month: "short",
-  });
-};
-
 const getCardDaysRemaining = (dateValue) => {
   if (!dateValue) return null;
   const dueDate = new Date(`${dateValue}T00:00:00`);
@@ -544,6 +533,16 @@ const [editingTx, setEditingTx] = useState(null);
 const [searchQuery, setSearchQuery] = useState("");
 const [searchStartDate, setSearchStartDate] = useState("");
 const [searchEndDate, setSearchEndDate] = useState("");
+const [searchResultsCleared, setSearchResultsCleared] = useState(false);
+const [aiQuestion, setAiQuestion] = useState("");
+const [isAiLoading, setIsAiLoading] = useState(false);
+const [aiMessages, setAiMessages] = useState([
+  {
+    id: "welcome",
+    role: "assistant",
+    content: "你好！我可以根據目前的收入、開支、貸款及交易紀錄回答財務問題。",
+  },
+]);
 
 const closeCategoryChart = () => {
   setCategoryChartOpen(false);
@@ -650,9 +649,10 @@ const globalSearchResults = useMemo(() => {
     );
   });
 }, [historicalData, searchEndDate, searchQuery, searchStartDate, transactions]);
+const displayedSearchResults = searchResultsCleared ? [] : globalSearchResults;
 const searchTotals = useMemo(
   () =>
-    globalSearchResults.reduce(
+    displayedSearchResults.reduce(
       (totals, transaction) => {
         const amount = Number(transaction.amount || 0);
         const refund = Number(
@@ -665,7 +665,7 @@ const searchTotals = useMemo(
       },
       { totalAmount: 0, totalRefund: 0 }
     ),
-  [globalSearchResults]
+  [displayedSearchResults]
 );
 const searchNetAmount = searchTotals.totalAmount - searchTotals.totalRefund;
 const totalLoanPrincipal = useMemo(
@@ -1520,6 +1520,71 @@ setLoanMemos(next);
 localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
 };
 
+const sendAiQuestion = async (question = aiQuestion) => {
+  const text = question.trim();
+  if (!text || isAiLoading) return;
+
+  const financialData = {
+    summary: {
+      totalIncome,
+      totalExpense,
+      totalLoanPrincipal,
+      loanForecastSummary,
+      financialRisk: {
+        score: financialRisk.score,
+        label: financialRisk.label,
+        description: financialRisk.description,
+      },
+    },
+    incomes,
+    expenses: transactions,
+    cards,
+    loans: loanListWithMetrics,
+    archivedHistory: historicalData,
+    searchResults: globalSearchResults,
+  };
+
+  setIsAiLoading(true);
+  setAiMessages((messages) => [
+    ...messages,
+    { id: createId("ai-user"), role: "user", content: text },
+  ]);
+  setAiQuestion("");
+
+  try {
+    const response = await fetch("/api/ai-analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: text, financialData }),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || "AI 分析服務暫時無法使用。");
+    }
+
+    setAiMessages((messages) => [
+      ...messages,
+      {
+        id: createId("ai-answer"),
+        role: "assistant",
+        content: result.answer || "AI 暫時未能提供答案，請稍後再試。",
+      },
+    ]);
+  } catch (error) {
+    console.error("AI analysis request failed:", error);
+    setAiMessages((messages) => [
+      ...messages,
+      {
+        id: createId("ai-error"),
+        role: "assistant",
+        content: error.message || "AI 分析失敗，請稍後再試。",
+      },
+    ]);
+  } finally {
+    setIsAiLoading(false);
+  }
+};
+
   return (
     <div className="relative isolate min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(148,163,184,0.2),_transparent_65%)] text-slate-100">
       {/* ====== 頂部 Header ====== */}
@@ -1770,12 +1835,11 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       {[
         { id: "overview", label: "財務總覽及報表", icon: LayoutDashboard },
         { id: "comparison", label: "歷史跨期對決", icon: Layers },
-        { id: "search", label: "🔍 智能歷史搜索", icon: Sparkles },
-        { id: "analysis", label: "貸款分析", icon: Landmark },
+        { id: "search", label: "🤖 智能分析", icon: Sparkles },
         { id: "cards", label: "信用卡", icon: CreditCard },
         { id: "transactions", label: "交易紀錄", icon: Receipt },
         { id: "income", label: "收入管理", icon: Wallet },
-        { id: "loans", label: "貸款管理及備忘錄", icon: Landmark },
+        { id: "loans", label: "貸款管理", icon: Landmark },
       ].map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -1934,8 +1998,8 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             <Sparkles size={22} />
           </span>
           <div>
-            <h1 className="text-2xl font-bold text-white">智能歷史搜索</h1>
-            <p className="mt-1 text-sm text-slate-400">搜尋活期及已封存交易紀錄</p>
+            <h1 className="text-2xl font-bold text-white">智能分析</h1>
+            <p className="mt-1 text-sm text-slate-400">整合財務分析與活期/封存交易搜索</p>
           </div>
         </div>
 
@@ -1946,7 +2010,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                 type="search"
                 placeholder="搜尋說明或類別"
                 value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
+                onChange={(event) => {
+                  setSearchResultsCleared(false);
+                  setSearchQuery(event.target.value);
+                }}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500"
               />
             </Field>
@@ -1954,7 +2021,10 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
               <input
                 type="date"
                 value={searchStartDate}
-                onChange={(event) => setSearchStartDate(event.target.value)}
+                onChange={(event) => {
+                  setSearchResultsCleared(false);
+                  setSearchStartDate(event.target.value);
+                }}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
               />
             </Field>
@@ -1962,23 +2032,107 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
               <input
                 type="date"
                 value={searchEndDate}
-                onChange={(event) => setSearchEndDate(event.target.value)}
+                onChange={(event) => {
+                  setSearchResultsCleared(false);
+                  setSearchEndDate(event.target.value);
+                }}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 p-2.5 text-white outline-none focus:border-cyan-500 [color-scheme:dark]"
               />
             </Field>
             <Button
               type="button"
               variant="secondary"
-              onClick={() => {
-                setSearchQuery("");
-                setSearchStartDate("");
-                setSearchEndDate("");
-              }}
+              onClick={() => setSearchResultsCleared(false)}
               className="w-full py-2.5"
             >
-              重置篩選
+              <Sparkles size={16} /> 即時搜索
             </Button>
           </div>
+        </Glass>
+
+        <Glass className="space-y-5 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-white">AI 財務畫像與智能 Q&amp;A</h2>
+              <p className="mt-1 text-xs text-slate-400">由 DeepSeek 提供分析；提交問題時，相關財務資料會傳送至 AI 服務。</p>
+            </div>
+            <Sparkles size={20} className="text-cyan-300" aria-hidden="true" />
+          </div>
+
+          <div className="rounded-xl border border-slate-700/80 bg-slate-950/60 p-4">
+            <h3 className="text-sm font-semibold text-slate-200">財務畫像</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">
+              目前風險評級為 <strong className="text-white">{financialRisk.label}</strong>。總收入 {money(totalIncome)}，總開支 {money(totalExpense)}，貸款本金 {money(totalLoanPrincipal)}。
+              {financialRisk.description}
+            </p>
+            <p className="mt-2 text-sm leading-6 text-cyan-200">
+              {totalIncome <= 0
+                ? "建議持續記錄收入與支出，建立可靠的現金流基線。"
+                : totalExpense > totalIncome
+                  ? "本期記錄的支出高於收入，可先檢視主要支出類別並設定支出上限。"
+                  : "可定期檢視主要支出類別，並比較貸款 APR 以尋找優化空間。"}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={isAiLoading}
+              onClick={() => sendAiQuestion("根據我的歷史紀錄，有哪些主要開支可以節省？")}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:border-cyan-500/50 hover:text-white"
+            >
+              根據我的歷史紀錄，有哪些主要開支可以節省？
+            </button>
+            <button
+              type="button"
+              disabled={isAiLoading}
+              onClick={() => sendAiQuestion("目前的負債比率是否安全？")}
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-left text-xs text-slate-300 transition-colors hover:border-cyan-500/50 hover:text-white"
+            >
+              目前的負債比率是否安全？
+            </button>
+          </div>
+
+          <div role="log" aria-live="polite" aria-label="智能問答對話" className="max-h-72 space-y-3 overflow-y-auto rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+            {aiMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`max-w-[90%] rounded-xl border px-3 py-2 text-sm leading-6 ${
+                  message.role === "user"
+                    ? "ml-auto border-cyan-500/30 bg-cyan-950/50 text-cyan-100"
+                    : "border-slate-700 bg-slate-900 text-slate-200"
+                }`}
+              >
+                {message.content}
+              </div>
+            ))}
+            {isAiLoading && (
+              <div role="status" className="text-sm text-cyan-300">
+                AI 正在分析中...
+              </div>
+            )}
+          </div>
+
+          <form
+            className="flex flex-col gap-2 sm:flex-row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              sendAiQuestion();
+            }}
+          >
+            <input
+              type="text"
+              aria-label="輸入財務問題"
+              placeholder="例如：如何改善每月現金流？"
+              value={aiQuestion}
+              disabled={isAiLoading}
+              onChange={(event) => setAiQuestion(event.target.value)}
+              className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 p-3 text-white outline-none focus:border-cyan-500"
+            />
+            <Button type="submit" variant="primary" className="shrink-0" disabled={!aiQuestion.trim() || isAiLoading}>
+              <Sparkles size={16} /> {isAiLoading ? "分析中" : "發送"}
+            </Button>
+          </form>
         </Glass>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -2005,9 +2159,24 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
         <Glass className="p-5">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-lg font-bold text-white">搜索結果</h2>
-            <span className="text-xs text-slate-400">{globalSearchResults.length} 筆交易</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400">{displayedSearchResults.length} 筆交易</span>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={displayedSearchResults.length === 0}
+                onClick={() => setSearchResultsCleared(true)}
+                aria-label="清除目前搜索結果，不會刪除交易資料"
+                title="清除目前顯示的搜索結果"
+                className="px-3 py-1.5 text-xs"
+              >
+                <Trash2 size={14} /> 清除結果
+              </Button>
+            </div>
           </div>
-          {globalSearchResults.length === 0 ? (
+          {searchResultsCleared ? (
+            <Empty icon={Sparkles}>搜尋結果已清除。調整篩選或按「即時搜索」重新顯示。</Empty>
+          ) : displayedSearchResults.length === 0 ? (
             <Empty icon={Sparkles}>沒有符合條件的交易紀錄</Empty>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-slate-800">
@@ -2023,7 +2192,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80">
-                  {globalSearchResults.map((transaction, index) => {
+                  {displayedSearchResults.map((transaction, index) => {
                     const refundAmount = Number(
                       transaction.refundAmount ?? transaction.refund ?? transaction.paymentAmount ?? 0
                     );
@@ -2205,7 +2374,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
       </section>
     )}
 
-    {tab === "analysis" && (
+    {tab === "loans" && (
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <Glass className="p-5">
@@ -2274,45 +2443,6 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           </Glass>
         </div>
 
-        <Glass className="p-6">
-          <h3 className="text-base font-bold text-white mb-4">貸款策略比較</h3>
-          {loanComparisonData.length === 0 ? (
-            <Empty>目前未有貸款紀錄，請先新增貸款</Empty>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead className="text-slate-400">
-                  <tr>
-                    <th className="pb-3 pr-4">銀行</th>
-                    <th className="pb-3 pr-4 text-right">本金</th>
-                    <th className="pb-3 pr-4 text-right">月供</th>
-                    <th className="pb-3 pr-4 text-right">APR</th>
-                    <th className="pb-3 pr-4 text-right">總利息</th>
-                    <th className="pb-3 pr-4 text-right">月供佔收入</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loanComparisonData.map((item) => (
-                    <tr key={item.bank} className="border-t border-slate-800/80">
-                      <td className="py-3 pr-4 text-white">{item.bank}</td>
-                      <td className="py-3 pr-4 text-right text-slate-200">{money(item.principal)}</td>
-                      <td className="py-3 pr-4 text-right text-slate-200">{money(item.monthlyPayment)}</td>
-                      <td className="py-3 pr-4 text-right font-bold text-cyan-400">
-                        {formatAPR(item.apr)}
-                      </td>
-                      <td className="py-3 pr-4 text-right text-amber-300">{money(item.totalInterest)}</td>
-                      <td className="py-3 pr-4 text-right text-emerald-400">
-                        {Number.isFinite(item.budgetShare) && item.budgetShare >= 0
-                          ? `${item.budgetShare.toFixed(2)}%`
-                          : "0.00%"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Glass>
       </div>
     )}
 
@@ -2853,6 +2983,7 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
             </>
           )}
         </Glass>
+
       </div>
     )}
 
@@ -3165,6 +3296,48 @@ localStorage.setItem(STORAGE_KEY_LOAN_MEMOS, JSON.stringify(next));
           )}
         </Glass>
       </div>
+    )}
+
+    {tab === "loans" && (
+    <section className="space-y-6">
+      <Glass className="p-6">
+        <h3 className="mb-4 text-base font-bold text-white">貸款策略比較</h3>
+        {loanComparisonData.length === 0 ? (
+          <Empty>目前未有貸款紀錄，請先新增貸款</Empty>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-slate-400">
+                <tr>
+                  <th className="pb-3 pr-4">銀行</th>
+                  <th className="pb-3 pr-4 text-right">本金</th>
+                  <th className="pb-3 pr-4 text-right">月供</th>
+                  <th className="pb-3 pr-4 text-right">APR</th>
+                  <th className="pb-3 pr-4 text-right">總利息</th>
+                  <th className="pb-3 pr-4 text-right">月供佔收入</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loanComparisonData.map((item, index) => (
+                  <tr key={`${item.bank}-${index}`} className="border-t border-slate-800/80">
+                    <td className="py-3 pr-4 text-white">{item.bank}</td>
+                    <td className="py-3 pr-4 text-right text-slate-200">{money(item.principal)}</td>
+                    <td className="py-3 pr-4 text-right text-slate-200">{money(item.monthlyPayment)}</td>
+                    <td className="py-3 pr-4 text-right font-bold text-cyan-400">{formatAPR(item.apr)}</td>
+                    <td className="py-3 pr-4 text-right text-amber-300">{money(item.totalInterest)}</td>
+                    <td className="py-3 pr-4 text-right text-emerald-400">
+                      {Number.isFinite(item.budgetShare) && item.budgetShare >= 0
+                        ? `${item.budgetShare.toFixed(2)}%`
+                        : "0.00%"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Glass>
+    </section>
     )}
 
     {/* ====== 貸款管理備忘錄 ====== */}
