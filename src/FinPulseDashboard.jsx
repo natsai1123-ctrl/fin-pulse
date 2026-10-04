@@ -1563,8 +1563,11 @@ const sendAiQuestion = async (question = aiQuestion) => {
     });
     const result = await response.json().catch(() => null);
     if (!response.ok) {
+      const errorMessage = [result?.error, result?.detail]
+        .filter((message) => typeof message === "string" && message.trim())
+        .join(" ");
       throw new Error(
-        result?.error || `AI 分析服務回應錯誤（HTTP ${response.status}）。`
+        errorMessage || `AI 分析服務回應錯誤（HTTP ${response.status}）。`
       );
     }
     if (typeof result?.answer !== "string" || !result.answer.trim()) {

@@ -12,6 +12,10 @@ const distDirectory = path.join(projectDirectory, "dist");
 // 限制請求大小，避免過大的財務資料佔用伺服器資源。
 app.use(express.json({ limit: "1mb" }));
 
+app.get("/api/health", (_request, response) => {
+  response.json({ status: "ok" });
+});
+
 const deepseek = process.env.DEEPSEEK_API_KEY
   ? new OpenAI({
       apiKey: process.env.DEEPSEEK_API_KEY,
@@ -59,12 +63,39 @@ app.post("/api/ai-analyze", async (request, response) => {
     return response.json({ answer });
   } catch (error) {
     console.error("DeepSeek request failed:", error);
-    return response.status(502).json({ error: "AI 分析服務暫時無法使用，請稍後再試。" });
+    const message =
+      error.status === 402
+        ? "DeepSeek 帳戶餘額不足，請充值後再試。"
+        : error.status === 401
+          ? "DeepSeek API Key 無效，請檢查伺服器設定。"
+          : error.status === 429
+            ? "DeepSeek 請求過於頻繁，請稍後再試。"
+            : "AI 分析服務暫時無法使用，請稍後再試。";
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    const detail =
+      typeof error?.message === "string"
+        ? (apiKey ? error.message.split(apiKey).join("[redacted]") : error.message).slice(0, 500)
+        : "未知的 DeepSeek 錯誤";
+    return response.status(502).json({ error: message, detail });
   }
 });
 
 app.use("/api", (_request, response) => {
   response.status(404).json({ error: "找不到 API 路由。" });
+});
+
+app.use("/api", (error, _request, response, next) => {
+  if (response.headersSent) return next(error);
+
+  console.error("API request failed:", error);
+  const status = error.status === 413 ? 413 : error.status === 400 ? 400 : 500;
+  const message =
+    status === 413
+      ? "提交資料超過大小限制。"
+      : status === 400
+        ? "API 請求格式不正確。"
+        : "API 請求處理失敗，請稍後再試。";
+  return response.status(status).json({ error: message });
 });
 
 app.use(express.static(distDirectory));
