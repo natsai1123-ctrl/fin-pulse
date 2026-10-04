@@ -24,6 +24,12 @@ const deepseek = process.env.DEEPSEEK_API_KEY
   : null;
 
 app.post("/api/ai-analyze", async (request, response) => {
+  const loggedQuestion = String(request.body?.question ?? "").slice(0, 160);
+  console.log(
+    "██████ [後端收到請求] 正在處理用戶的 AI 問題:",
+    loggedQuestion || "[空白問題]"
+  );
+
   const { question, financialData } = request.body ?? {};
   if (
     typeof question !== "string" ||
