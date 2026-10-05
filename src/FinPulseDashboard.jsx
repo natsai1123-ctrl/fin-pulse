@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -72,6 +72,11 @@ const CLOUD_DATA_KEYS = [
   STORAGE_KEY_LOANS,
   STORAGE_KEY_LOAN_MEMOS,
   STORAGE_KEY_HISTORICAL_DATA,
+];
+const PRIVATE_STORAGE_KEYS = [
+  ...CLOUD_DATA_KEYS,
+  STORAGE_KEY_AI_MESSAGES,
+  STORAGE_KEY_SEARCH_RESULTS_CLEARED,
 ];
 
 const CATEGORIES = [
@@ -468,33 +473,16 @@ const [categoryChartOpen, setCategoryChartOpen] = useState(false);
 const categoryChartTriggerRef = useRef(null);
 const [archiveMonth, setArchiveMonth] = useState("");
 const [archiveMonthError, setArchiveMonthError] = useState("");
-const [historicalData, setHistoricalData] = useState(() => {
-  const storedHistory = fromStorage(STORAGE_KEY_HISTORICAL_DATA);
-  return Array.isArray(storedHistory) ? storedHistory : [];
-});
+const [historicalData, setHistoricalData] = useState([]);
 const [comparisonMode, setComparisonMode] = useState("month");
 const [comparisonMonth, setComparisonMonth] = useState(() => {
   const currentDate = new Date();
   return `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}`;
 });
-const [cards, setCards] = useState(() =>
-fromStorage(STORAGE_KEY_CARDS).map((card) => ({
-  ...card,
-  dueDate: card.dueDate || "",
-  paymentAmount: Number(card.paymentAmount || 0),
-  isPaid: Boolean(card.isPaid),
-}))
-);
-const [transactions, setTransactions] = useState(() =>
-fromStorage(STORAGE_KEY_TX)
-);
-const [incomes, setIncomes] = useState(() =>
-fromStorage(STORAGE_KEY_INCOME)
-);
-const [loans, setLoans] = useState(() => {
-  const storedLoans = fromStorage(STORAGE_KEY_LOANS);
-  return Array.isArray(storedLoans) ? storedLoans.map(normalizeLoan) : [];
-});
+const [cards, setCards] = useState([]);
+const [transactions, setTransactions] = useState([]);
+const [incomes, setIncomes] = useState([]);
+const [loans, setLoans] = useState([]);
 const loansRef = useRef(loans);
 const commitLoans = (nextLoans) => {
   loansRef.current = nextLoans;
@@ -505,14 +493,15 @@ const commitLoans = (nextLoans) => {
     console.error("Failed to persist loan records:", error);
   }
 };
-const [loanMemos, setLoanMemos] = useState(() =>
-fromStorage(STORAGE_KEY_LOAN_MEMOS)
-);
+const [loanMemos, setLoanMemos] = useState([]);
 
 const [user, setUser] = useState(null);
 const [cloudStatus, setCloudStatus] = useState(auth ? "checking" : "local");
 const [cloudReadyUid, setCloudReadyUid] = useState(null);
 const cloudWriteVersion = useRef(0);
+const cloudUnsubscribersRef = useRef([]);
+const activeCloudUidRef = useRef(null);
+const aiRequestVersionRef = useRef(0);
 
 // 表單 State
 const [newCard, setNewCard] = useState({
@@ -547,13 +536,7 @@ const [editingTx, setEditingTx] = useState(null);
 const [searchQuery, setSearchQuery] = useState("");
 const [searchStartDate, setSearchStartDate] = useState("");
 const [searchEndDate, setSearchEndDate] = useState("");
-const [searchResultsCleared, setSearchResultsClearedState] = useState(() => {
-  try {
-    return localStorage.getItem(STORAGE_KEY_SEARCH_RESULTS_CLEARED) === "true";
-  } catch {
-    return false;
-  }
-});
+const [searchResultsCleared, setSearchResultsClearedState] = useState(false);
 const setSearchResultsCleared = (cleared) => {
   setSearchResultsClearedState(cleared);
   try {
@@ -591,6 +574,51 @@ const closeCategoryChart = () => {
   categoryChartTriggerRef.current?.focus();
 };
 
+const clearSensitiveData = useCallback(() => {
+  activeCloudUidRef.current = null;
+  cloudUnsubscribersRef.current.forEach((unsubscribe) => unsubscribe());
+  cloudUnsubscribersRef.current = [];
+  cloudWriteVersion.current += 1;
+  aiRequestVersionRef.current += 1;
+  loansRef.current = [];
+
+  setTab("overview");
+  setArchiveComplete(false);
+  setUser(null);
+  setCloudReadyUid(null);
+  setCards([]);
+  setTransactions([]);
+  setIncomes([]);
+  setLoans([]);
+  setLoanMemos([]);
+  setHistoricalData([]);
+  setAiMessages([]);
+  setAiQuestion("");
+  setIsAiLoading(false);
+  setEditingTx(null);
+  setNewCard({ name: "", bank: BANKS[0], dueDate: today(), paymentAmount: "" });
+  setNewTx({ description: "", amount: "", category: CATEGORIES[0], date: today(), cardId: "" });
+  setNewIncome({ source: INCOME_SOURCES[0], amount: "", date: today() });
+  setNewLoan({ bank: LOAN_BANKS[0][0], principal: "", monthlyPayment: "", months: "", upfrontFee: "", rebate: "", date: today() });
+  setNewMemo("");
+  setSearchQuery("");
+  setSearchStartDate("");
+  setSearchEndDate("");
+  setSearchResultsClearedState(false);
+  setArchiveMonth("");
+  setArchiveMonthError("");
+  setArchiveDialogOpen(false);
+  setCategoryChartOpen(false);
+
+  PRIVATE_STORAGE_KEYS.forEach((key) => {
+    try {
+      localStorage.removeItem(key);
+    } catch (error) {
+      console.error("Failed to remove private local data:", error);
+    }
+  });
+}, []);
+
 useEffect(() => {
   if (!categoryChartOpen) return;
 
@@ -611,23 +639,76 @@ useEffect(() => {
 
 // Firebase Auth 狀態變更監聽與每位使用者的雲端資料訂閱
 useEffect(() => {
-  if (!auth) return undefined;
+  if (!auth) {
+    PRIVATE_STORAGE_KEYS.forEach((key) => {
+      try {
+        localStorage.removeItem(key);
+      } catch (error) {
+        console.error("Failed to remove private local data:", error);
+      }
+    });
+    return undefined;
+  }
 
-  let dataUnsubscribers = [];
   const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
-    dataUnsubscribers.forEach((unsubscribe) => unsubscribe());
-    dataUnsubscribers = [];
+    cloudUnsubscribersRef.current.forEach((unsubscribe) => unsubscribe());
+    cloudUnsubscribersRef.current = [];
+    activeCloudUidRef.current = currentUser?.uid || null;
     setCloudReadyUid(null);
-    setUser(currentUser);
 
     if (!currentUser) {
+      clearSensitiveData();
       setCloudStatus("local");
       return;
     }
+
+    setUser(currentUser);
     if (!db) {
       setCloudStatus("error");
       return;
     }
+
+    const storedCards = fromStorage(STORAGE_KEY_CARDS);
+    const storedLoans = fromStorage(STORAGE_KEY_LOANS);
+    const storedTransactions = fromStorage(STORAGE_KEY_TX);
+    const storedIncomes = fromStorage(STORAGE_KEY_INCOME);
+    const storedMemos = fromStorage(STORAGE_KEY_LOAN_MEMOS);
+    const storedHistory = fromStorage(STORAGE_KEY_HISTORICAL_DATA);
+    const storedMessages = fromStorage(STORAGE_KEY_AI_MESSAGES);
+    const localLoans = Array.isArray(storedLoans) ? storedLoans.map(normalizeLoan) : [];
+
+    setCards(Array.isArray(storedCards) ? storedCards.map((card) => ({
+      ...card,
+      dueDate: card.dueDate || "",
+      paymentAmount: Number(card.paymentAmount || 0),
+      isPaid: Boolean(card.isPaid),
+    })) : []);
+    setTransactions(Array.isArray(storedTransactions) ? storedTransactions : []);
+    setIncomes(Array.isArray(storedIncomes) ? storedIncomes : []);
+    loansRef.current = localLoans;
+    setLoans(localLoans);
+    setLoanMemos(Array.isArray(storedMemos) ? storedMemos : []);
+    setHistoricalData(Array.isArray(storedHistory) ? storedHistory : []);
+    try {
+      setSearchResultsClearedState(
+        localStorage.getItem(STORAGE_KEY_SEARCH_RESULTS_CLEARED) === "true"
+      );
+    } catch {
+      setSearchResultsClearedState(false);
+    }
+    const validMessages = Array.isArray(storedMessages)
+      ? storedMessages.filter((message) =>
+          message &&
+          typeof message.id === "string" &&
+          ["user", "assistant"].includes(message.role) &&
+          typeof message.content === "string"
+        )
+      : [];
+    setAiMessages(validMessages.length ? validMessages : [{
+      id: "welcome",
+      role: "assistant",
+      content: "你好！我可以根據目前的收入、開支、貸款及交易紀錄回答財務問題。",
+    }]);
 
     setCloudStatus("syncing");
     const receivedKeys = new Set();
@@ -640,10 +721,11 @@ useEffect(() => {
       [STORAGE_KEY_HISTORICAL_DATA]: setHistoricalData,
     };
 
-    dataUnsubscribers = CLOUD_DATA_KEYS.map((key) =>
+    cloudUnsubscribersRef.current = CLOUD_DATA_KEYS.map((key) =>
       onSnapshot(
         doc(db, "users", currentUser.uid, "dashboard", key),
         (snapshot) => {
+          if (activeCloudUidRef.current !== currentUser.uid) return;
           if (snapshot.exists()) {
             const records = snapshot.data().records;
             if (Array.isArray(records)) {
@@ -666,6 +748,7 @@ useEffect(() => {
           }
         },
         (error) => {
+          if (activeCloudUidRef.current !== currentUser.uid) return;
           console.error("Failed to read dashboard data from Firestore:", error);
           setCloudReadyUid(null);
           setCloudStatus("error");
@@ -676,24 +759,26 @@ useEffect(() => {
 
   return () => {
     unsubscribeAuth();
-    dataUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    activeCloudUidRef.current = null;
+    cloudUnsubscribersRef.current.forEach((unsubscribe) => unsubscribe());
+    cloudUnsubscribersRef.current = [];
   };
-}, []);
+}, [clearSensitiveData]);
 
 useEffect(() => {
+  if (!user) return;
   try {
     localStorage.setItem(STORAGE_KEY_AI_MESSAGES, JSON.stringify(aiMessages));
   } catch (error) {
     console.error("Failed to persist AI conversation:", error);
   }
-}, [aiMessages]);
+}, [aiMessages, user]);
 
 useEffect(() => {
   if (!user || !db || cloudReadyUid !== user.uid) return undefined;
 
   const writeVersion = ++cloudWriteVersion.current;
   let active = true;
-  setCloudStatus("syncing");
   const recordsByKey = {
     [STORAGE_KEY_CARDS]: cards,
     [STORAGE_KEY_TX]: transactions,
@@ -711,16 +796,30 @@ useEffect(() => {
     )
   )
     .then(() => {
-      if (active && writeVersion === cloudWriteVersion.current) {
+      if (
+        active &&
+        activeCloudUidRef.current === user.uid &&
+        writeVersion === cloudWriteVersion.current
+      ) {
         setCloudStatus("synced");
       }
     })
     .catch((error) => {
       console.error("Failed to write dashboard data to Firestore:", error);
-      if (active && writeVersion === cloudWriteVersion.current) {
+      if (
+        active &&
+        activeCloudUidRef.current === user.uid &&
+        writeVersion === cloudWriteVersion.current
+      ) {
         setCloudStatus("error");
       }
     });
+
+  Promise.resolve().then(() => {
+    if (active && writeVersion === cloudWriteVersion.current) {
+      setCloudStatus("syncing");
+    }
+  });
 
   return () => {
     active = false;
@@ -729,12 +828,13 @@ useEffect(() => {
 
 useEffect(() => {
   loansRef.current = loans;
+  if (!user) return;
   try {
     localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(loans));
   } catch (error) {
     console.error("Failed to persist loan records:", error);
   }
-}, [loans]);
+}, [loans, user]);
 
 useEffect(() => {
   const syncLoansFromStorage = (event) => {
@@ -1258,9 +1358,12 @@ const openArchiveDialog = () => {
 const importWorkbook = async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
+  const importUid = activeCloudUidRef.current;
 
   try {
+    if (!importUid) return;
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    if (activeCloudUidRef.current !== importUid) return;
     const sheetLookup = new Map(
       workbook.SheetNames.map((sheetName) => [sheetName.trim().toLowerCase(), sheetName])
     );
@@ -1509,6 +1612,8 @@ window.alert(`Google 登入失敗：${err.message || "請稍後重試。"}`);
 
 const handleLogout = async () => {
 if (!auth) return;
+clearSensitiveData();
+setCloudStatus("checking");
 try {
   await signOut(auth);
 } catch (err) {
@@ -1686,6 +1791,7 @@ const handleDeleteAiMessage = (id) => {
 const sendAiQuestion = async (question = aiQuestion) => {
   const text = question.trim();
   if (!text || isAiLoading) return;
+  const requestVersion = ++aiRequestVersionRef.current;
 
   const financialData = {
     summary: {
@@ -1734,27 +1840,62 @@ const sendAiQuestion = async (question = aiQuestion) => {
     }
 
     setAiMessages((messages) => [
-      ...messages,
-      {
-        id: createId("ai-answer"),
-        role: "assistant",
-        content: result.answer.trim(),
-      },
+      ...(requestVersion === aiRequestVersionRef.current ? messages : []),
+      ...(requestVersion === aiRequestVersionRef.current
+        ? [{
+            id: createId("ai-answer"),
+            role: "assistant",
+            content: result.answer.trim(),
+          }]
+        : []),
     ]);
   } catch (error) {
     console.error("AI analysis request failed:", error);
     setAiMessages((messages) => [
-      ...messages,
-      {
-        id: createId("ai-error"),
-        role: "assistant",
-        content: error.message || "AI 分析失敗，請稍後再試。",
-      },
+      ...(requestVersion === aiRequestVersionRef.current ? messages : []),
+      ...(requestVersion === aiRequestVersionRef.current
+        ? [{
+            id: createId("ai-error"),
+            role: "assistant",
+            content: error.message || "AI 分析失敗，請稍後再試。",
+          }]
+        : []),
     ]);
   } finally {
-    setIsAiLoading(false);
+    if (requestVersion === aiRequestVersionRef.current) {
+      setIsAiLoading(false);
+    }
   }
 };
+
+if (!user) {
+  return (
+    <div className="relative isolate flex min-h-screen items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(148,163,184,0.2),_transparent_65%)] px-4 text-slate-100">
+      <section className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-900/90 p-8 text-center shadow-2xl shadow-black/40">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 via-sky-500 to-teal-600 font-black text-slate-950">
+          FP
+        </div>
+        <h1 className="mt-5 text-2xl font-bold text-white">FINPULSE</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-300">
+          請先登入 Google 以檢視財務資料。
+        </p>
+        {cloudStatus === "error" && (
+          <p role="alert" className="mt-4 text-sm text-rose-300">
+            登入或雲端同步失敗，請檢查 Firebase 設定後重試。
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="primary"
+          onClick={handleGoogleLogin}
+          className="mt-6 w-full py-3"
+        >
+          <LogIn size={17} /> Google 登入
+        </Button>
+      </section>
+    </div>
+  );
+}
 
   return (
     <div className="relative isolate min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_at_top,_rgba(148,163,184,0.2),_transparent_65%)] text-slate-100">
