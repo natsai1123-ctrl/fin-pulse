@@ -63,6 +63,7 @@ export const STORAGE_KEY_LOANS = "STORAGE_KEY_LOANS";
 export const STORAGE_KEY_LOAN_MEMOS = "STORAGE_KEY_LOAN_MEMOS";
 export const STORAGE_KEY_HISTORICAL_DATA = "finpulse_historical";
 export const STORAGE_KEY_AI_MESSAGES = "STORAGE_KEY_AI_MESSAGES";
+export const STORAGE_KEY_SEARCH_RESULTS_CLEARED = "STORAGE_KEY_SEARCH_RESULTS_CLEARED";
 
 const CLOUD_DATA_KEYS = [
   STORAGE_KEY_CARDS,
@@ -546,7 +547,21 @@ const [editingTx, setEditingTx] = useState(null);
 const [searchQuery, setSearchQuery] = useState("");
 const [searchStartDate, setSearchStartDate] = useState("");
 const [searchEndDate, setSearchEndDate] = useState("");
-const [searchResultsCleared, setSearchResultsCleared] = useState(false);
+const [searchResultsCleared, setSearchResultsClearedState] = useState(() => {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SEARCH_RESULTS_CLEARED) === "true";
+  } catch {
+    return false;
+  }
+});
+const setSearchResultsCleared = (cleared) => {
+  setSearchResultsClearedState(cleared);
+  try {
+    localStorage.setItem(STORAGE_KEY_SEARCH_RESULTS_CLEARED, String(cleared));
+  } catch (error) {
+    console.error("Failed to persist search results state:", error);
+  }
+};
 const [aiQuestion, setAiQuestion] = useState("");
 const [isAiLoading, setIsAiLoading] = useState(false);
 const [aiMessages, setAiMessages] = useState(() => {
