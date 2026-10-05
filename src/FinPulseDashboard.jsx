@@ -48,12 +48,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { auth, googleProvider } from "./firebase";
+import { auth, db, googleProvider } from "./firebase";
 import {
 onAuthStateChanged,
 signInWithPopup,
 signOut,
 } from "firebase/auth";
+import { doc, onSnapshot, setDoc } from "firebase/firestore";
 
 export const STORAGE_KEY_CARDS = "STORAGE_KEY_CARDS";
 export const STORAGE_KEY_TX = "STORAGE_KEY_TX";
@@ -61,6 +62,16 @@ export const STORAGE_KEY_INCOME = "STORAGE_KEY_INCOME";
 export const STORAGE_KEY_LOANS = "STORAGE_KEY_LOANS";
 export const STORAGE_KEY_LOAN_MEMOS = "STORAGE_KEY_LOAN_MEMOS";
 export const STORAGE_KEY_HISTORICAL_DATA = "finpulse_historical";
+export const STORAGE_KEY_AI_MESSAGES = "STORAGE_KEY_AI_MESSAGES";
+
+const CLOUD_DATA_KEYS = [
+  STORAGE_KEY_CARDS,
+  STORAGE_KEY_TX,
+  STORAGE_KEY_INCOME,
+  STORAGE_KEY_LOANS,
+  STORAGE_KEY_LOAN_MEMOS,
+  STORAGE_KEY_HISTORICAL_DATA,
+];
 
 const CATEGORIES = [
 "餐飲",
@@ -498,7 +509,9 @@ fromStorage(STORAGE_KEY_LOAN_MEMOS)
 );
 
 const [user, setUser] = useState(null);
-const [cloudStatus, setCloudStatus] = useState("local");
+const [cloudStatus, setCloudStatus] = useState(auth ? "checking" : "local");
+const [cloudReadyUid, setCloudReadyUid] = useState(null);
+const cloudWriteVersion = useRef(0);
 
 // 表單 State
 const [newCard, setNewCard] = useState({
@@ -536,13 +549,27 @@ const [searchEndDate, setSearchEndDate] = useState("");
 const [searchResultsCleared, setSearchResultsCleared] = useState(false);
 const [aiQuestion, setAiQuestion] = useState("");
 const [isAiLoading, setIsAiLoading] = useState(false);
-const [aiMessages, setAiMessages] = useState([
-  {
-    id: "welcome",
-    role: "assistant",
-    content: "你好！我可以根據目前的收入、開支、貸款及交易紀錄回答財務問題。",
-  },
-]);
+const [aiMessages, setAiMessages] = useState(() => {
+  const storedMessages = fromStorage(STORAGE_KEY_AI_MESSAGES);
+  const validMessages = Array.isArray(storedMessages)
+    ? storedMessages.filter(
+        (message) =>
+          message &&
+          typeof message.id === "string" &&
+          ["user", "assistant"].includes(message.role) &&
+          typeof message.content === "string"
+      )
+    : [];
+  return validMessages.length
+    ? validMessages
+    : [
+        {
+          id: "welcome",
+          role: "assistant",
+          content: "你好！我可以根據目前的收入、開支、貸款及交易紀錄回答財務問題。",
+        },
+      ];
+});
 
 const closeCategoryChart = () => {
   setCategoryChartOpen(false);
@@ -567,19 +594,123 @@ useEffect(() => {
   };
 }, [categoryChartOpen]);
 
-// Firebase Auth 狀態變更監聽
+// Firebase Auth 狀態變更監聽與每位使用者的雲端資料訂閱
 useEffect(() => {
-if (!auth) return;
-const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-setUser(currentUser);
-if (currentUser) {
-setCloudStatus("synced");
-} else {
-setCloudStatus("local");
-}
-});
-return () => unsubscribe();
+  if (!auth) return undefined;
+
+  let dataUnsubscribers = [];
+  const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+    dataUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    dataUnsubscribers = [];
+    setCloudReadyUid(null);
+    setUser(currentUser);
+
+    if (!currentUser) {
+      setCloudStatus("local");
+      return;
+    }
+    if (!db) {
+      setCloudStatus("error");
+      return;
+    }
+
+    setCloudStatus("syncing");
+    const receivedKeys = new Set();
+    const settersByKey = {
+      [STORAGE_KEY_CARDS]: setCards,
+      [STORAGE_KEY_TX]: setTransactions,
+      [STORAGE_KEY_INCOME]: setIncomes,
+      [STORAGE_KEY_LOANS]: setLoans,
+      [STORAGE_KEY_LOAN_MEMOS]: setLoanMemos,
+      [STORAGE_KEY_HISTORICAL_DATA]: setHistoricalData,
+    };
+
+    dataUnsubscribers = CLOUD_DATA_KEYS.map((key) =>
+      onSnapshot(
+        doc(db, "users", currentUser.uid, "dashboard", key),
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const records = snapshot.data().records;
+            if (Array.isArray(records)) {
+              settersByKey[key]((currentRecords) =>
+                JSON.stringify(currentRecords) === JSON.stringify(records)
+                  ? currentRecords
+                  : records
+              );
+              try {
+                localStorage.setItem(key, JSON.stringify(records));
+              } catch (error) {
+                console.error("Failed to cache cloud data locally:", error);
+              }
+            }
+          }
+
+          receivedKeys.add(key);
+          if (receivedKeys.size === CLOUD_DATA_KEYS.length) {
+            setCloudReadyUid(currentUser.uid);
+          }
+        },
+        (error) => {
+          console.error("Failed to read dashboard data from Firestore:", error);
+          setCloudReadyUid(null);
+          setCloudStatus("error");
+        }
+      )
+    );
+  });
+
+  return () => {
+    unsubscribeAuth();
+    dataUnsubscribers.forEach((unsubscribe) => unsubscribe());
+  };
 }, []);
+
+useEffect(() => {
+  try {
+    localStorage.setItem(STORAGE_KEY_AI_MESSAGES, JSON.stringify(aiMessages));
+  } catch (error) {
+    console.error("Failed to persist AI conversation:", error);
+  }
+}, [aiMessages]);
+
+useEffect(() => {
+  if (!user || !db || cloudReadyUid !== user.uid) return undefined;
+
+  const writeVersion = ++cloudWriteVersion.current;
+  let active = true;
+  setCloudStatus("syncing");
+  const recordsByKey = {
+    [STORAGE_KEY_CARDS]: cards,
+    [STORAGE_KEY_TX]: transactions,
+    [STORAGE_KEY_INCOME]: incomes,
+    [STORAGE_KEY_LOANS]: loans,
+    [STORAGE_KEY_LOAN_MEMOS]: loanMemos,
+    [STORAGE_KEY_HISTORICAL_DATA]: historicalData,
+  };
+
+  Promise.all(
+    CLOUD_DATA_KEYS.map((key) =>
+      setDoc(doc(db, "users", user.uid, "dashboard", key), {
+        records: recordsByKey[key],
+      })
+    )
+  )
+    .then(() => {
+      if (active && writeVersion === cloudWriteVersion.current) {
+        setCloudStatus("synced");
+      }
+    })
+    .catch((error) => {
+      console.error("Failed to write dashboard data to Firestore:", error);
+      if (active && writeVersion === cloudWriteVersion.current) {
+        setCloudStatus("error");
+      }
+    });
+
+  return () => {
+    active = false;
+  };
+}, [cards, cloudReadyUid, historicalData, incomes, loanMemos, loans, transactions, user]);
 
 useEffect(() => {
   loansRef.current = loans;
@@ -1346,17 +1477,30 @@ const importWorkbook = async (event) => {
 
 // 登入 / 登出事件處理
 const handleGoogleLogin = async () => {
-if (!auth || !googleProvider) return;
+if (!auth || !googleProvider) {
+  setCloudStatus("error");
+  window.alert("Firebase 尚未完成設定，Google 登入暫時無法使用。");
+  return;
+}
+setCloudStatus("checking");
 try {
 await signInWithPopup(auth, googleProvider);
 } catch (err) {
 console.error("Login failed:", err);
+setCloudStatus("error");
+window.alert(`Google 登入失敗：${err.message || "請稍後重試。"}`);
 }
 };
 
 const handleLogout = async () => {
 if (!auth) return;
-await signOut(auth);
+try {
+  await signOut(auth);
+} catch (err) {
+  console.error("Logout failed:", err);
+  setCloudStatus("error");
+  window.alert(`登出失敗：${err.message || "請稍後重試。"}`);
+}
 };
 
 // CRUD 處理：信用卡
@@ -1621,6 +1765,16 @@ const sendAiQuestion = async (question = aiQuestion) => {
               <>
                 <CloudCheck size={14} className="text-emerald-400" />
                 <span>雲端已同步 ({user?.displayName || "已登入"})</span>
+              </>
+            ) : cloudStatus === "syncing" || cloudStatus === "checking" ? (
+              <>
+                <Cloud size={14} className="animate-pulse text-cyan-400" />
+                <span>{cloudStatus === "checking" ? "正在檢查登入狀態" : "雲端同步中"}</span>
+              </>
+            ) : cloudStatus === "error" ? (
+              <>
+                <TriangleAlert size={14} className="text-rose-400" />
+                <span>登入或雲端同步失敗，本機資料仍可使用</span>
               </>
             ) : (
               <>

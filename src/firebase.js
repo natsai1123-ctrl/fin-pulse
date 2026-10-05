@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
@@ -16,11 +16,6 @@ const requiredFirebaseVariables = [
 	["VITE_FIREBASE_API_KEY", firebaseConfig.apiKey],
 	["VITE_FIREBASE_AUTH_DOMAIN", firebaseConfig.authDomain],
 	["VITE_FIREBASE_PROJECT_ID", firebaseConfig.projectId],
-	["VITE_FIREBASE_STORAGE_BUCKET", firebaseConfig.storageBucket],
-	[
-		"VITE_FIREBASE_MESSAGING_SENDER_ID",
-		firebaseConfig.messagingSenderId,
-	],
 	["VITE_FIREBASE_APP_ID", firebaseConfig.appId],
 ];
 const missingVariables = requiredFirebaseVariables
@@ -40,7 +35,7 @@ let firestore = null;
 
 if (hasFirebaseConfig) {
 	try {
-		app = initializeApp(firebaseConfig);
+		app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 		firebaseAuth = getAuth(app);
 		firestore = getFirestore(app);
 	} catch (error) {
@@ -49,5 +44,5 @@ if (hasFirebaseConfig) {
 }
 
 export const auth = firebaseAuth;
-export const googleProvider = new GoogleAuthProvider();
+export const googleProvider = firebaseAuth ? new GoogleAuthProvider() : null;
 export const db = firestore;
