@@ -1435,59 +1435,6 @@ const restoreArchivedMonth = (yearMonth) => {
   setTab("transactions");
 };
 
-// 還原封存檔內單筆交易：由 archived 恢復為 active 並即時更新列表
-const restoreArchivedTransaction = (yearMonth, transactionIndex) => {
-  const archive = historicalData.find((entry) => entry.yearMonth === yearMonth);
-  if (!archive) return;
-  const archiveTransactions = Array.isArray(archive.transactions)
-    ? archive.transactions
-    : [];
-  const target = archiveTransactions[transactionIndex];
-  if (!target) return;
-
-  const restoredTransaction = { ...target };
-  delete restoredTransaction.isArchived;
-  delete restoredTransaction.archiveMonth;
-  if (
-    restoredTransaction.id === undefined ||
-    restoredTransaction.id === null ||
-    restoredTransaction.id === ""
-  ) {
-    restoredTransaction.id = createId("tx");
-  }
-
-  const alreadyActive = transactions.some(
-    (transaction) => String(transaction.id) === String(restoredTransaction.id)
-  );
-  const nextTransactions = alreadyActive
-    ? transactions
-    : [restoredTransaction, ...transactions];
-  const nextArchiveTransactions = archiveTransactions.filter(
-    (_, index) => index !== transactionIndex
-  );
-  const nextHistoricalData = historicalData.map((entry) =>
-    entry.yearMonth === yearMonth
-      ? { ...entry, transactions: nextArchiveTransactions }
-      : entry
-  );
-
-  try {
-    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(nextTransactions));
-    localStorage.setItem(
-      STORAGE_KEY_HISTORICAL_DATA,
-      JSON.stringify(nextHistoricalData)
-    );
-  } catch (error) {
-    console.error("Failed to persist restored transaction:", error);
-    window.alert("還原失敗，請檢查瀏覽器儲存空間後重試。");
-    return;
-  }
-
-  setArchiveComplete(false);
-  setTransactions(nextTransactions);
-  setHistoricalData(nextHistoricalData);
-};
-
 const importWorkbook = async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
@@ -2893,54 +2840,9 @@ if (!user) {
                       onClick={() => restoreArchivedMonth(archive.yearMonth)}
                       className="whitespace-nowrap text-xs"
                     >
-                      <ArchiveRestore size={15} /> 還原整個月份
+                      <ArchiveRestore size={15} /> 還原
                     </Button>
                   </div>
-
-                  {archiveTransactions.length === 0 ? (
-                    <Empty icon={Receipt}>此封存檔沒有交易記錄</Empty>
-                  ) : (
-                    <div className="overflow-x-auto rounded-xl border border-slate-800">
-                      <table className="min-w-[820px] w-full text-left text-sm">
-                        <thead className="bg-slate-950/80 text-xs text-slate-400">
-                          <tr>
-                            <th className="px-4 py-3 font-medium">日期</th>
-                            <th className="px-4 py-3 font-medium">說明 / 商家</th>
-                            <th className="px-4 py-3 font-medium">類別</th>
-                            <th className="px-4 py-3 font-medium">狀態</th>
-                            <th className="px-4 py-3 text-right font-medium">簽帳金額</th>
-                            <th className="px-4 py-3 text-right font-medium">操作</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/80">
-                          {archiveTransactions.map((transaction, index) => (
-                            <tr key={transaction.id || `${archive.yearMonth}-${index}`} className="transition-colors hover:bg-slate-800/35">
-                              <td className="whitespace-nowrap px-4 py-3 text-slate-300">{transaction.date || "-"}</td>
-                              <td className="px-4 py-3 font-bold text-white">{transaction.description || "-"}</td>
-                              <td className="px-4 py-3 text-slate-300">{transaction.category || "-"}</td>
-                              <td className="px-4 py-3">
-                                <span className="inline-flex whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-300">
-                                  📦 已封存
-                                </span>
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-rose-400">
-                                {money(transaction.amount)}
-                              </td>
-                              <td className="whitespace-nowrap px-4 py-3 text-right">
-                                <Button
-                                  variant="secondary"
-                                  onClick={() => restoreArchivedTransaction(archive.yearMonth, index)}
-                                  className="ml-auto px-3 py-1.5 text-xs"
-                                >
-                                  <ArchiveRestore size={14} /> 還原
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
                 </Glass>
               );
             })
