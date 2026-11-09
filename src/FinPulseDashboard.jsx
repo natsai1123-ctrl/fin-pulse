@@ -3,6 +3,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Archive,
+  ArchiveRestore,
   Calendar,
   CalendarDays,
   ChartPie as PieIcon,
@@ -1355,6 +1356,138 @@ const openArchiveDialog = () => {
   setArchiveDialogOpen(true);
 };
 
+// 以記錄 ID 精準比對，把封存記錄合併回主列表（避免重複）
+const mergeRestoredRecords = (currentRecords, archivedRecords) => {
+  const currentList = Array.isArray(currentRecords) ? currentRecords : [];
+  const archivedList = Array.isArray(archivedRecords) ? archivedRecords : [];
+  const seenIds = new Set(
+    currentList
+      .map((record) => record?.id)
+      .filter((id) => id !== undefined && id !== null && id !== "")
+      .map(String)
+  );
+  const restored = archivedList.filter((record) => {
+    const id = record?.id;
+    if (id === undefined || id === null || id === "") return true;
+    if (seenIds.has(String(id))) return false;
+    seenIds.add(String(id));
+    return true;
+  });
+  return [...restored, ...currentList];
+};
+
+// 還原整個封存月份：所有記錄由 archived 恢復為 active，並從封存歷史移除
+const restoreArchivedMonth = (yearMonth) => {
+  const archive = historicalData.find((entry) => entry.yearMonth === yearMonth);
+  if (!archive) return;
+
+  const confirmed = window.confirm(
+    `確定要還原 ${yearMonth} 的封存記錄嗎？\n該月份的交易、收入、信用卡及貸款記錄將重新顯示於主列表。`
+  );
+  if (!confirmed) return;
+
+  const nextCards = mergeRestoredRecords(cards, archive.cards);
+  const nextTransactions = mergeRestoredRecords(transactions, archive.transactions);
+  const nextIncomes = mergeRestoredRecords(incomes, archive.incomes);
+  const nextLoans = mergeRestoredRecords(loans, archive.loans).map(normalizeLoan);
+  const nextMemos = mergeRestoredRecords(loanMemos, archive.loanMemos);
+  const nextHistoricalData = historicalData.filter(
+    (entry) => entry.yearMonth !== yearMonth
+  );
+
+  const updates = [
+    [STORAGE_KEY_CARDS, nextCards],
+    [STORAGE_KEY_TX, nextTransactions],
+    [STORAGE_KEY_INCOME, nextIncomes],
+    [STORAGE_KEY_LOANS, nextLoans],
+    [STORAGE_KEY_LOAN_MEMOS, nextMemos],
+    [STORAGE_KEY_HISTORICAL_DATA, nextHistoricalData],
+  ];
+  const originalValues = new Map(
+    updates.map(([key]) => [key, localStorage.getItem(key)])
+  );
+  try {
+    updates.forEach(([key, value]) =>
+      localStorage.setItem(key, JSON.stringify(value))
+    );
+  } catch (error) {
+    console.error("Failed to persist restored records:", error);
+    originalValues.forEach((value, key) => {
+      try {
+        if (value === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
+      } catch (rollbackError) {
+        console.error("Failed to roll back storage after restore error:", rollbackError);
+      }
+    });
+    window.alert("還原失敗，請檢查瀏覽器儲存空間後重試。");
+    return;
+  }
+
+  setArchiveComplete(false);
+  setCards(nextCards);
+  setTransactions(nextTransactions);
+  setIncomes(nextIncomes);
+  commitLoans(nextLoans);
+  setLoanMemos(nextMemos);
+  setHistoricalData(nextHistoricalData);
+  setEditingTx(null);
+  setTab("transactions");
+};
+
+// 還原封存檔內單筆交易：由 archived 恢復為 active 並即時更新列表
+const restoreArchivedTransaction = (yearMonth, transactionIndex) => {
+  const archive = historicalData.find((entry) => entry.yearMonth === yearMonth);
+  if (!archive) return;
+  const archiveTransactions = Array.isArray(archive.transactions)
+    ? archive.transactions
+    : [];
+  const target = archiveTransactions[transactionIndex];
+  if (!target) return;
+
+  const restoredTransaction = { ...target };
+  delete restoredTransaction.isArchived;
+  delete restoredTransaction.archiveMonth;
+  if (
+    restoredTransaction.id === undefined ||
+    restoredTransaction.id === null ||
+    restoredTransaction.id === ""
+  ) {
+    restoredTransaction.id = createId("tx");
+  }
+
+  const alreadyActive = transactions.some(
+    (transaction) => String(transaction.id) === String(restoredTransaction.id)
+  );
+  const nextTransactions = alreadyActive
+    ? transactions
+    : [restoredTransaction, ...transactions];
+  const nextArchiveTransactions = archiveTransactions.filter(
+    (_, index) => index !== transactionIndex
+  );
+  const nextHistoricalData = historicalData.map((entry) =>
+    entry.yearMonth === yearMonth
+      ? { ...entry, transactions: nextArchiveTransactions }
+      : entry
+  );
+
+  try {
+    localStorage.setItem(STORAGE_KEY_TX, JSON.stringify(nextTransactions));
+    localStorage.setItem(
+      STORAGE_KEY_HISTORICAL_DATA,
+      JSON.stringify(nextHistoricalData)
+    );
+  } catch (error) {
+    console.error("Failed to persist restored transaction:", error);
+    window.alert("還原失敗，請檢查瀏覽器儲存空間後重試。");
+    return;
+  }
+
+  setArchiveComplete(false);
+  setTransactions(nextTransactions);
+  setHistoricalData(nextHistoricalData);
+};
+
 const importWorkbook = async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
@@ -2157,6 +2290,7 @@ if (!user) {
       {[
         { id: "overview", label: "財務總覽及報表", icon: LayoutDashboard },
         { id: "comparison", label: "歷史跨期對決", icon: Layers },
+        { id: "archived", label: "已封存記錄", icon: ArchiveRestore },
         { id: "search", label: "🤖 智能分析", icon: Sparkles },
         { id: "cards", label: "信用卡", icon: CreditCard },
         { id: "transactions", label: "交易紀錄", icon: Receipt },
@@ -2710,6 +2844,107 @@ if (!user) {
             </>
           )}
         </section>
+      </section>
+    )}
+
+    {/* ====== Tab: 已封存記錄（可還原） ====== */}
+    {tab === "archived" && (
+      <section className="space-y-6">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-500/10 text-amber-300">
+            <ArchiveRestore size={22} />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-white">已封存記錄 (Archived Records)</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              檢視所有已封存月份的歷史資料，可逐筆或整月還原至主列表。
+            </p>
+          </div>
+        </div>
+
+        {historicalData.length === 0 ? (
+          <Empty icon={Archive}>尚無已封存記錄。使用右上角「封存當月數據」後，封存月份會顯示於此。</Empty>
+        ) : (
+          [...historicalData]
+            .sort((left, right) => String(right.yearMonth).localeCompare(String(left.yearMonth)))
+            .map((archive) => {
+              const archiveTransactions = Array.isArray(archive.transactions) ? archive.transactions : [];
+              const archiveIncomes = Array.isArray(archive.incomes) ? archive.incomes : [];
+              const archiveCards = Array.isArray(archive.cards) ? archive.cards : [];
+              const archiveLoans = Array.isArray(archive.loans) ? archive.loans : [];
+              return (
+                <Glass key={archive.yearMonth} className="space-y-4 p-5">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="flex items-center gap-2 text-lg font-bold text-white">
+                        <Archive size={18} className="text-amber-300" />
+                        {archive.yearMonth} 封存檔
+                      </h2>
+                      <p className="mt-1 text-xs text-slate-400">
+                        封存時間：{archive.archivedAt ? new Date(archive.archivedAt).toLocaleString("zh-HK") : "-"}
+                        {" · "}交易 {archiveTransactions.length} 筆
+                        {" · "}收入 {archiveIncomes.length} 筆
+                        {" · "}信用卡 {archiveCards.length} 張
+                        {" · "}貸款 {archiveLoans.length} 筆
+                      </p>
+                    </div>
+                    <Button
+                      variant="archive"
+                      onClick={() => restoreArchivedMonth(archive.yearMonth)}
+                      className="whitespace-nowrap text-xs"
+                    >
+                      <ArchiveRestore size={15} /> 還原整個月份
+                    </Button>
+                  </div>
+
+                  {archiveTransactions.length === 0 ? (
+                    <Empty icon={Receipt}>此封存檔沒有交易記錄</Empty>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="min-w-[820px] w-full text-left text-sm">
+                        <thead className="bg-slate-950/80 text-xs text-slate-400">
+                          <tr>
+                            <th className="px-4 py-3 font-medium">日期</th>
+                            <th className="px-4 py-3 font-medium">說明 / 商家</th>
+                            <th className="px-4 py-3 font-medium">類別</th>
+                            <th className="px-4 py-3 font-medium">狀態</th>
+                            <th className="px-4 py-3 text-right font-medium">簽帳金額</th>
+                            <th className="px-4 py-3 text-right font-medium">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/80">
+                          {archiveTransactions.map((transaction, index) => (
+                            <tr key={transaction.id || `${archive.yearMonth}-${index}`} className="transition-colors hover:bg-slate-800/35">
+                              <td className="whitespace-nowrap px-4 py-3 text-slate-300">{transaction.date || "-"}</td>
+                              <td className="px-4 py-3 font-bold text-white">{transaction.description || "-"}</td>
+                              <td className="px-4 py-3 text-slate-300">{transaction.category || "-"}</td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex whitespace-nowrap rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-300">
+                                  📦 已封存
+                                </span>
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-right font-bold text-rose-400">
+                                {money(transaction.amount)}
+                              </td>
+                              <td className="whitespace-nowrap px-4 py-3 text-right">
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => restoreArchivedTransaction(archive.yearMonth, index)}
+                                  className="ml-auto px-3 py-1.5 text-xs"
+                                >
+                                  <ArchiveRestore size={14} /> 還原
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </Glass>
+              );
+            })
+        )}
       </section>
     )}
 
